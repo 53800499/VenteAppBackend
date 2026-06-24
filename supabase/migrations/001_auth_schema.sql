@@ -1,0 +1,125 @@
+-- VenteApp — Schéma Auth (Module 1)
+-- Adaptation PostgreSQL/Supabase du modèle SQLite v2.0
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ---------------------------------------------------------------------------
+-- shops
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS shops (
+  id              BIGSERIAL PRIMARY KEY,
+  name            TEXT        NOT NULL DEFAULT 'Ma Boutique',
+  address         TEXT,
+  phone           TEXT,
+  owner_user_id   BIGINT,
+  is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+  is_default      BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_at      BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  server_id       UUID        DEFAULT gen_random_uuid() UNIQUE,
+  synced_at       BIGINT
+);
+
+-- ---------------------------------------------------------------------------
+-- users
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+  id                      BIGSERIAL PRIMARY KEY,
+  shop_id                 BIGINT      NOT NULL REFERENCES shops(id),
+  name                    TEXT        NOT NULL,
+  pin_hash                TEXT        NOT NULL,
+  role                    TEXT        NOT NULL DEFAULT 'owner'
+                          CHECK (role IN ('owner', 'seller', 'viewer')),
+  is_active               BOOLEAN     NOT NULL DEFAULT TRUE,
+  avatar_path             TEXT,
+  last_login_at           BIGINT,
+  failed_attempts         INTEGER     NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
+  locked_until            BIGINT,
+  lockout_count           INTEGER     NOT NULL DEFAULT 0 CHECK (lockout_count >= 0),
+  emergency_recovery_hash TEXT,
+  biometric_enabled       BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at              BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  updated_at              BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  version                 INTEGER     NOT NULL DEFAULT 1 CHECK (version >= 1),
+  server_id               UUID        DEFAULT gen_random_uuid() UNIQUE,
+  synced_at               BIGINT,
+  sync_status             TEXT        CHECK (sync_status IN ('pending', 'synced', 'conflict')),
+  UNIQUE (name, shop_id)
+);
+
+ALTER TABLE shops
+  ADD CONSTRAINT shops_owner_user_id_fkey
+  FOREIGN KEY (owner_user_id) REFERENCES users(id)
+  DEFERRABLE INITIALLY DEFERRED;
+
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_shop ON users(shop_id);
+
+-- ---------------------------------------------------------------------------
+-- settings (singleton par shop en V1)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS settings (
+  id                      BIGINT PRIMARY KEY DEFAULT 1,
+  shop_id                 BIGINT      NOT NULL REFERENCES shops(id) UNIQUE,
+  shop_name               TEXT        NOT NULL DEFAULT 'Ma Boutique',
+  shop_phone              TEXT,
+  shop_address            TEXT,
+  shop_logo_path          TEXT,
+  currency                TEXT        NOT NULL DEFAULT 'FCFA',
+  language                TEXT        NOT NULL DEFAULT 'fr',
+  default_alert_threshold INTEGER     NOT NULL DEFAULT 5,
+  daily_summary_time      TEXT        NOT NULL DEFAULT '20:00',
+  enable_stock_alerts     BOOLEAN     NOT NULL DEFAULT TRUE,
+  enable_debt_reminders   BOOLEAN     NOT NULL DEFAULT TRUE,
+  debt_reminder_days      INTEGER     NOT NULL DEFAULT 7,
+  enable_daily_summary    BOOLEAN     NOT NULL DEFAULT TRUE,
+  receipt_footer          TEXT,
+  backup_last_at          BIGINT,
+  backup_path             TEXT,
+  cloud_sync_enabled      BOOLEAN     NOT NULL DEFAULT FALSE,
+  cloud_last_sync_at      BIGINT,
+  auto_lock_minutes       INTEGER     NOT NULL DEFAULT 5 CHECK (auto_lock_minutes > 0),
+  updated_at              BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+-- ---------------------------------------------------------------------------
+-- audit_logs
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id            BIGSERIAL PRIMARY KEY,
+  shop_id       BIGINT      NOT NULL REFERENCES shops(id),
+  user_id       BIGINT      NOT NULL REFERENCES users(id),
+  action        TEXT        NOT NULL,
+  module        TEXT        NOT NULL,
+  entity_id     BIGINT      NOT NULL,
+  entity_table  TEXT        NOT NULL,
+  old_value     JSONB,
+  new_value     JSONB,
+  reason        TEXT,
+  ip_or_device  TEXT,
+  created_at    BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+  synced_at     BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_auditlogs_entity
+  ON audit_logs(entity_table, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auditlogs_user
+  ON audit_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auditlogs_action
+  ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_auditlogs_module
+  ON audit_logs(module, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- auth_sessions (sessions applicatives post-déverrouillage PIN)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         BIGINT      NOT NULL REFERENCES users(id),
+  shop_id         BIGINT      NOT NULL REFERENCES shops(id),
+  pin_verified_at BIGINT      NOT NULL,
+  expires_at      BIGINT      NOT NULL,
+  last_activity_at BIGINT     NOT NULL,
+  created_at      BIGINT      NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
