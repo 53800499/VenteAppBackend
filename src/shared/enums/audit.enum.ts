@@ -18,6 +18,9 @@ export enum AuditAction {
   SHOP_DEACTIVATED = 'shop_deactivated',
   SHOP_DEFAULT_SET = 'shop_default_set',
   SHOP_SWITCHED = 'shop_switched',
+  CUSTOMER_ARCHIVED = 'customer_archived',
+  CUSTOMER_CREATED = 'customer_created',
+  CUSTOMER_UPDATED = 'customer_updated',
 }
 
 export enum AuditModule {
@@ -28,4 +31,5 @@ export enum AuditModule {
   DEBTS = 'debts',
   PRODUCTS = 'products',
   SHOPS = 'shops',
+  CUSTOMERS = 'customers',
 }

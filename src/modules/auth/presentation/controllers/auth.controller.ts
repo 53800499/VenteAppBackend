@@ -93,6 +93,7 @@ import {
   VerifyWhatsappOtpUseCase,
 } from '../../application/use-cases/whatsapp-otp.use-cases';
 import { CheckSetupAvailableUseCase } from '../../application/use-cases/check-setup-available.use-case';
+import { ValidateSetupOwnerUseCase } from '../../application/use-cases/validate-setup-owner.use-case';
 
 @ApiTags('Authentification')
 @Controller('auth')
@@ -101,6 +102,7 @@ export class AuthController {
   constructor(
     private readonly getLockScreen: GetLockScreenUseCase,
     private readonly setupOwner: SetupOwnerUseCase,
+    private readonly validateSetupOwner: ValidateSetupOwnerUseCase,
     private readonly checkSetupAvailable: CheckSetupAvailableUseCase,
     private readonly loginWithPin: LoginWithPinUseCase,
     private readonly emergencyUnlock: EmergencyUnlockUseCase,
@@ -220,6 +222,18 @@ export class AuthController {
   @ApiOkResponse({ description: 'État de l\'installation / création boutique' })
   setupAvailableHandler() {
     return this.checkSetupAvailable.execute();
+  }
+
+  @Post('setup/validate')
+  @ApiOperation({
+    summary: 'Vérifier le nom de boutique avant création',
+    description:
+      'Refuse l\'installation uniquement si ce nom de boutique existe déjà sur le serveur.',
+  })
+  @ApiOkResponse({ description: 'Résultat de la validation préalable' })
+  @ApiConflictResponse({ type: ConflictErrorDto })
+  validateSetupHandler(@Body() dto: SetupOwnerDto) {
+    return this.validateSetupOwner.executeFull(dto);
   }
 
   @Post('setup')

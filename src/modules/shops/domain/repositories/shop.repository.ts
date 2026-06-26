@@ -18,4 +18,5 @@ export abstract class ShopRepository {
   abstract updateOwner(shopId: number, ownerUserId: number): Promise<void>;
   abstract updateInShop(shopId: number, data: UpdateShopData): Promise<Shop>;
   abstract clearDefaultForOwner(ownerUserId: number): Promise<void>;
+  abstract findByNameIgnoreCase(name: string): Promise<Shop | null>;
 }

@@ -18,6 +18,7 @@ import { EmergencyUnlockUseCase } from './application/use-cases/emergency-unlock
 import { EnableBiometricUseCase } from './application/use-cases/enable-biometric.use-case';
 import { GetLockScreenUseCase } from './application/use-cases/get-lock-screen.use-case';
 import { LoginWithPinUseCase } from './application/use-cases/login-with-pin.use-case';
+import { ValidateSetupOwnerUseCase } from './application/use-cases/validate-setup-owner.use-case';
 import { SetupOwnerUseCase } from './application/use-cases/setup-owner.use-case';
 import { CheckSetupAvailableUseCase } from './application/use-cases/check-setup-available.use-case';
 import { TouchSessionUseCase } from './application/use-cases/touch-session.use-case';
@@ -68,6 +69,7 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     AuthPresenter,
     GetLockScreenUseCase,
     SetupOwnerUseCase,
+    ValidateSetupOwnerUseCase,
     CheckSetupAvailableUseCase,
     LoginWithPinUseCase,
     RequestWhatsappOtpUseCase,

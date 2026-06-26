@@ -13,6 +13,7 @@ import { ShopRepository } from '../../../shops/domain/repositories/shop.reposito
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
 import { Pin } from '../../domain/value-objects/pin.vo';
 import { SetupOwnerCommand } from '../commands/auth.commands';
+import { ValidateSetupOwnerUseCase } from './validate-setup-owner.use-case';
 
 @Injectable()
 export class SetupOwnerUseCase {
@@ -25,9 +26,12 @@ export class SetupOwnerUseCase {
     private readonly configService: ConfigService,
     private readonly events: EventEmitter2,
     private readonly tenantDb: TenantDatabaseService,
+    private readonly validateSetup: ValidateSetupOwnerUseCase,
   ) {}
 
   async execute(command: SetupOwnerCommand) {
+    await this.validateSetup.assertNoConflictsFull(command);
+
     return this.tenantDb.runWithoutTenant(async () => {
       const pin = Pin.create(command.pin);
       const pinHash = await this.pinHasher.hash(pin.value);

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../../../infrastructure/supabase/supabase.service';
+import { throwSupabaseError } from '../../../../shared/utils/throw-supabase-error.util';
 import { User } from '../../domain/entities/user.entity';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { UserMapper } from '../mappers/user.mapper';
@@ -116,7 +117,8 @@ export class SupabaseUserRepository extends UserRepository {
       .select('*')
       .single();
     if (error || !row) {
-      throw new BadRequestException(error?.message ?? 'Création utilisateur impossible.');
+      if (error) throwSupabaseError(error);
+      throw new BadRequestException('Création utilisateur impossible.');
     }
     return UserMapper.toDomain(row as UserRow);
   }

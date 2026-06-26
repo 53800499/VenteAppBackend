@@ -147,6 +147,18 @@ export function setupSwagger(app: INestApplication): void {
         '|-------|------------|',
         '| `GET /` | `payments:read` |',
         '| `GET :id` | `payments:read` |',
+        '',
+        '### Module 6 — Clients (`/api/customers`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `customers:read` |',
+        '| `GET debtors` | `customers:read` + `debts:read` (UC-11) |',
+        '| `GET :id` | `customers:read` |',
+        '| `GET :id/sales` | `customers:read` + `sales:read` |',
+        '| `GET :id/debt-reminder` | `customers:read` (UC-10 WhatsApp) |',
+        '| `POST /` | `customers:write` |',
+        '| `PATCH :id` | `customers:write` |',
+        '| `PATCH :id/archive` | `customers:archive` |',
       ].join('\n'),
     )
     .setVersion('1.0.0')
@@ -171,6 +183,7 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Ventes', 'Module 4 — Ventes standard et rapide, reçus, annulation (ECR-04, UC-05, UC-07)')
     .addTag('Dettes', 'Module 5 — Créances clients, remboursements et pardon (UC-08)')
     .addTag('Paiements', 'Module 5 — Historique des paiements et acomptes')
+    .addTag('Clients', 'Module 6 — Répertoire clients, fiches, débiteurs et rappels WhatsApp (ECR-08)')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, {

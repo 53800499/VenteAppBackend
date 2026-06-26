@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../../../infrastructure/supabase/supabase.service';
+import { throwSupabaseError } from '../../../../shared/utils/throw-supabase-error.util';
 import { TenantDatabaseService } from '../../../tenants/tenant-database.service';
 import { Shop } from '../../domain/entities/shop.entity';
 import {
@@ -74,7 +75,8 @@ export class SupabaseShopRepository extends ShopRepository {
         .select('*')
         .single();
       if (error || !row) {
-        throw new BadRequestException(error?.message ?? 'Création boutique impossible.');
+        if (error) throwSupabaseError(error);
+        throw new BadRequestException('Création boutique impossible.');
       }
       return ShopMapper.toDomain(row as ShopRow);
     });
@@ -107,6 +109,21 @@ export class SupabaseShopRepository extends ShopRepository {
         .update({ is_default: false })
         .eq('owner_user_id', ownerUserId);
       if (error) throw new BadRequestException(error.message);
+    });
+  }
+
+  async findByNameIgnoreCase(name: string): Promise<Shop | null> {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) return null;
+
+    return this.tenantDb.runWithoutTenant(async () => {
+      const { data, error } = await this.supabase.db.from('shops').select('*');
+      if (error) throw new BadRequestException(error.message);
+
+      const row = (data ?? []).find(
+        (shop) => (shop.name as string).trim().toLowerCase() === normalized,
+      );
+      return row ? ShopMapper.toDomain(row as ShopRow) : null;
     });
   }
 }
