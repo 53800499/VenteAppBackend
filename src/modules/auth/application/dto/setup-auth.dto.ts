@@ -41,6 +41,15 @@ export class SetupOwnerDto {
   @IsOptional()
   @IsString()
   shopPhone?: string;
+
+  @ApiProperty({
+    example: '+22997123456',
+    description: 'WhatsApp du patron pour la connexion OTP',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  ownerPhone: string;
 }
 
 export class EmergencyUnlockDto {
@@ -51,6 +60,20 @@ export class EmergencyUnlockDto {
   @IsString()
   @IsNotEmpty()
   recoveryToken: string;
+
+  @ApiProperty({
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    description: 'Identifiant stable de l\'appareil (UUID côté client)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  deviceId: string;
+
+  @ApiPropertyOptional({ example: 'Tablette caisse' })
+  @IsOptional()
+  @IsString()
+  deviceLabel?: string;
 
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()

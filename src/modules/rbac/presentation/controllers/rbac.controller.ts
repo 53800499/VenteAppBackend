@@ -12,7 +12,11 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -31,20 +35,29 @@ import { TransformResponseInterceptor } from '../../../../shared/interceptors/tr
 import {
   CreatePermissionOverrideDto,
   CreateShopRoleDto,
+  ReplaceUserPermissionOverridesDto,
   SetRolePermissionsDto,
   UpdateShopRoleDto,
 } from '../../application/dto/rbac-management.dto';
 import {
+  CheckPermissionResponseDto,
   MyPermissionsResponseDto,
   PermissionsCatalogResponseDto,
+  RoleCatalogItemDto,
+  RoleDetailResponseDto,
   RolesCatalogResponseDto,
+  UserEffectivePermissionsResponseDto,
+  UserOverridesResponseDto,
+  UserPermissionOverridesReplaceResponseDto,
 } from '../../application/dto/rbac-response.dto';
 import {
   CreateShopRoleUseCase,
   CreateUserOverrideUseCase,
   DeleteShopRoleUseCase,
+  GetUserEffectivePermissionsUseCase,
   ListUserOverridesUseCase,
   RemoveUserOverrideUseCase,
+  ReplaceUserOverridesUseCase,
   SetRolePermissionsUseCase,
   UpdateShopRoleUseCase,
 } from '../../application/use-cases/rbac-management.use-cases';
@@ -60,6 +73,7 @@ import {
 @Controller('rbac')
 @UseInterceptors(TransformResponseInterceptor)
 @UseGuards(SessionGuard, TenantGuard, PermissionsGuard)
+@ApiSecurity('bearer')
 export class RbacController {
   constructor(
     private readonly getRolesCatalog: GetRolesCatalogUseCase,
@@ -74,28 +88,54 @@ export class RbacController {
     private readonly listUserOverrides: ListUserOverridesUseCase,
     private readonly createUserOverride: CreateUserOverrideUseCase,
     private readonly removeUserOverride: RemoveUserOverrideUseCase,
+    private readonly replaceUserOverrides: ReplaceUserOverridesUseCase,
+    private readonly getUserPermissions: GetUserEffectivePermissionsUseCase,
   ) {}
 
   @Get('roles')
   @RequirePermissions(Permission.RBAC_READ)
-  @ApiSecurity('session-token')
-  @ApiOperation({ summary: 'Catalogue des rôles (système + boutique)' })
+  @ApiOperation({
+    summary: 'Catalogue des rôles (système + boutique)',
+    description: [
+      '**Permission** : `rbac:read`',
+      '',
+      'Liste les rôles système (`owner`, `seller`, `viewer`) et les rôles personnalisés de la boutique,',
+      'avec leurs permissions directes et rôles parents (héritage).',
+    ].join('\n'),
+  })
   @ApiOkResponse({ type: RolesCatalogResponseDto })
+  @ApiForbiddenResponse({ description: 'Permission `rbac:read` requise' })
   listRoles(@CurrentAuth() auth: AuthContext) {
     return this.getRolesCatalog.execute(auth.shopId);
   }
 
   @Get('roles/:code')
   @RequirePermissions(Permission.RBAC_READ)
-  @ApiParam({ name: 'code', example: 'seller' })
-  @ApiOperation({ summary: 'Détail d\'un rôle et ses permissions directes' })
+  @ApiParam({ name: 'code', example: 'seller', description: 'Code du rôle (ex. seller, shop_1_caissier)' })
+  @ApiOperation({
+    summary: 'Détail d\'un rôle et ses permissions directes',
+    description: '**Permission** : `rbac:read` — Retourne le rôle, ses parents et grants allow/deny.',
+  })
+  @ApiOkResponse({ type: RoleDetailResponseDto })
+  @ApiNotFoundResponse({ description: 'Rôle introuvable ou hors boutique' })
   getRole(@CurrentAuth() auth: AuthContext, @Param('code') code: string) {
     return this.getRoleDetail.execute(code, auth.shopId);
   }
 
   @Post('roles')
   @RequirePermissions(Permission.RBAC_MANAGE)
-  @ApiOperation({ summary: 'Créer un rôle personnalisé pour la boutique' })
+  @ApiOperation({
+    summary: 'Créer un rôle personnalisé pour la boutique',
+    description: [
+      '**Permission** : `rbac:manage`',
+      '',
+      'Le code final sera `shop_{shopId}_{slug}` (ex. `shop_1_caissier`).',
+      'Au moins une permission doit être définie. Héritage optionnel via `parentRoleCode`.',
+    ].join('\n'),
+  })
+  @ApiCreatedResponse({ type: RoleCatalogItemDto })
+  @ApiConflictResponse({ description: 'Code de rôle déjà utilisé' })
+  @ApiBadRequestResponse({ description: 'Permissions invalides ou slug incorrect' })
   createRole(@CurrentAuth() auth: AuthContext, @Body() body: CreateShopRoleDto) {
     return this.createShopRole.execute(auth, body);
   }
@@ -103,7 +143,13 @@ export class RbacController {
   @Patch('roles/:code')
   @RequirePermissions(Permission.RBAC_MANAGE)
   @ApiParam({ name: 'code', example: 'shop_1_caissier' })
-  @ApiOperation({ summary: 'Mettre à jour un rôle boutique' })
+  @ApiOperation({
+    summary: 'Mettre à jour un rôle boutique',
+    description: '**Permission** : `rbac:manage` — Les rôles système sont protégés.',
+  })
+  @ApiOkResponse({ type: RoleCatalogItemDto })
+  @ApiForbiddenResponse({ description: 'Rôle système protégé' })
+  @ApiNotFoundResponse({ description: 'Rôle introuvable' })
   patchRole(
     @CurrentAuth() auth: AuthContext,
     @Param('code') code: string,
@@ -114,14 +160,29 @@ export class RbacController {
 
   @Delete('roles/:code')
   @RequirePermissions(Permission.RBAC_MANAGE)
-  @ApiOperation({ summary: 'Supprimer un rôle boutique' })
+  @ApiParam({ name: 'code', example: 'shop_1_caissier' })
+  @ApiOperation({
+    summary: 'Supprimer un rôle boutique',
+    description: [
+      '**Permission** : `rbac:manage`',
+      '',
+      'Refusé si le rôle est système ou encore assigné à des utilisateurs.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ description: 'Rôle supprimé' })
+  @ApiForbiddenResponse({ description: 'Rôle système ou encore utilisé' })
   removeRole(@CurrentAuth() auth: AuthContext, @Param('code') code: string) {
     return this.deleteShopRole.execute(auth, code);
   }
 
   @Put('roles/:code/permissions')
   @RequirePermissions(Permission.RBAC_MANAGE)
-  @ApiOperation({ summary: 'Remplacer les permissions d\'un rôle' })
+  @ApiParam({ name: 'code', example: 'shop_1_caissier' })
+  @ApiOperation({
+    summary: 'Remplacer les permissions d\'un rôle',
+    description: '**Permission** : `rbac:manage` — Remplace intégralement la liste des grants allow/deny.',
+  })
+  @ApiOkResponse({ type: RoleCatalogItemDto })
   replaceRolePermissions(
     @CurrentAuth() auth: AuthContext,
     @Param('code') code: string,
@@ -132,25 +193,46 @@ export class RbacController {
 
   @Get('permissions')
   @RequirePermissions(Permission.RBAC_READ)
-  @ApiSecurity('session-token')
-  @ApiOperation({ summary: 'Catalogue modules et permissions' })
+  @ApiOperation({
+    summary: 'Catalogue modules et permissions',
+    description: [
+      '**Permission** : `rbac:read`',
+      '',
+      'Référentiel complet des modules (`inventory`, `sales`, …) et permissions granulaires.',
+      'Utilisé pour construire les écrans de gestion des rôles.',
+    ].join('\n'),
+  })
   @ApiOkResponse({ type: PermissionsCatalogResponseDto })
   listPermissions() {
     return this.getPermissionsCatalog.execute();
   }
 
   @Get('me')
-  @ApiSecurity('session-token')
-  @ApiOperation({ summary: 'Permissions effectives de l\'utilisateur connecté' })
+  @ApiOperation({
+    summary: 'Permissions effectives de l\'utilisateur connecté',
+    description: [
+      'Aucune permission spécifique requise — session valide suffit.',
+      '',
+      'Retourne le rôle, le libellé et la liste résolue des permissions (rôle + héritage + overrides).',
+    ].join('\n'),
+  })
   @ApiOkResponse({ type: MyPermissionsResponseDto })
+  @ApiUnauthorizedResponse({ description: 'Session invalide' })
   myPermissions(@CurrentAuth() auth: AuthContext) {
     return this.getMyPermissions.execute(auth);
   }
 
   @Get('check/:permission')
-  @ApiSecurity('session-token')
-  @ApiParam({ name: 'permission', example: 'sales:cancel' })
-  @ApiOperation({ summary: 'Vérifier une permission' })
+  @ApiParam({
+    name: 'permission',
+    example: 'inventory:write',
+    description: 'Code permission à vérifier',
+  })
+  @ApiOperation({
+    summary: 'Vérifier une permission',
+    description: 'Utile côté client pour afficher/masquer des actions UI sans parser toute la liste.',
+  })
+  @ApiOkResponse({ type: CheckPermissionResponseDto })
   check(@CurrentAuth() auth: AuthContext, @Param('permission') permission: Permission) {
     return this.checkPermission.execute(auth, permission);
   }
@@ -158,14 +240,65 @@ export class RbacController {
   @Get('users/:userId/overrides')
   @RequirePermissions(Permission.RBAC_OVERRIDE)
   @ApiParam({ name: 'userId', example: 2 })
-  @ApiOperation({ summary: 'Lister les overrides d\'un utilisateur' })
+  @ApiOperation({
+    summary: 'Lister les overrides d\'un utilisateur',
+    description: '**Permission** : `rbac:override` — Permissions individuelles grant/deny hors rôle.',
+  })
+  @ApiOkResponse({ type: UserOverridesResponseDto })
   userOverrides(@CurrentAuth() auth: AuthContext, @Param('userId', ParseIntPipe) userId: number) {
     return this.listUserOverrides.execute(auth, userId);
   }
 
+  @Get('users/:userId/permissions')
+  @RequirePermissions(Permission.RBAC_READ)
+  @ApiParam({ name: 'userId', example: 2 })
+  @ApiOperation({
+    summary: 'Permissions effectives d\'un utilisateur',
+    description: [
+      '**Permission** : `rbac:read`',
+      '',
+      'Résolution complète rôle + héritage + overrides pour un membre de l\'équipe.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ type: UserEffectivePermissionsResponseDto })
+  userPermissions(@CurrentAuth() auth: AuthContext, @Param('userId', ParseIntPipe) userId: number) {
+    return this.getUserPermissions.execute(auth, userId);
+  }
+
+  @Put('users/:userId/permissions')
+  @RequirePermissions(Permission.RBAC_OVERRIDE)
+  @ApiParam({ name: 'userId', example: 2 })
+  @ApiOperation({
+    summary: 'Remplacer les permissions individuelles d\'un utilisateur',
+    description: [
+      '**Permission** : `rbac:override`',
+      '',
+      'Remplace intégralement la liste des overrides (grant/deny) de l\'utilisateur.',
+      'Une liste vide supprime tous les overrides.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ type: UserPermissionOverridesReplaceResponseDto })
+  replaceUserPermissions(
+    @CurrentAuth() auth: AuthContext,
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body: ReplaceUserPermissionOverridesDto,
+  ) {
+    return this.replaceUserOverrides.execute(auth, userId, body);
+  }
+
   @Post('users/:userId/overrides')
   @RequirePermissions(Permission.RBAC_OVERRIDE)
-  @ApiOperation({ summary: 'Accorder ou révoquer une permission individuelle' })
+  @ApiParam({ name: 'userId', example: 2 })
+  @ApiOperation({
+    summary: 'Accorder ou révoquer une permission individuelle',
+    description: [
+      '**Permission** : `rbac:override`',
+      '',
+      '`effect: grant` ajoute une permission ; `deny` la retire même si le rôle l\'accorde.',
+      'Expiration optionnelle via `expiresAt` (epoch ms).',
+    ].join('\n'),
+  })
+  @ApiCreatedResponse({ description: 'Override créé ou mis à jour' })
   addOverride(
     @CurrentAuth() auth: AuthContext,
     @Param('userId', ParseIntPipe) userId: number,
@@ -176,7 +309,14 @@ export class RbacController {
 
   @Delete('users/:userId/overrides/:permissionCode')
   @RequirePermissions(Permission.RBAC_OVERRIDE)
-  @ApiOperation({ summary: 'Supprimer un override utilisateur' })
+  @ApiParam({ name: 'userId', example: 2 })
+  @ApiParam({ name: 'permissionCode', example: 'sales:cancel' })
+  @ApiOperation({
+    summary: 'Supprimer un override utilisateur',
+    description: '**Permission** : `rbac:override`',
+  })
+  @ApiOkResponse({ description: 'Override supprimé' })
+  @ApiNotFoundResponse({ description: 'Override introuvable' })
   deleteOverride(
     @CurrentAuth() auth: AuthContext,
     @Param('userId', ParseIntPipe) userId: number,

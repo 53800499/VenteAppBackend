@@ -1,13 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../../../infrastructure/supabase/supabase.service';
+import { TenantDatabaseService } from '../../../tenants/tenant-database.service';
 import { Shop } from '../../domain/entities/shop.entity';
-import { ShopRepository } from '../../domain/repositories/shop.repository';
+import {
+  ShopRepository,
+  UpdateShopData,
+} from '../../domain/repositories/shop.repository';
 import { ShopMapper } from '../mappers/shop.mapper';
 import { ShopRow } from '../persistence/shop.row';
 
 @Injectable()
 export class SupabaseShopRepository extends ShopRepository {
-  constructor(private readonly supabase: SupabaseService) {
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly tenantDb: TenantDatabaseService,
+  ) {
     super();
   }
 
@@ -21,16 +28,56 @@ export class SupabaseShopRepository extends ShopRepository {
     return data ? ShopMapper.toDomain(data as ShopRow) : null;
   }
 
+  async findByOwnerUserId(ownerUserId: number): Promise<Shop[]> {
+    return this.tenantDb.runWithoutTenant(async () => {
+      const { data, error } = await this.supabase.db
+        .from('shops')
+        .select('*')
+        .eq('owner_user_id', ownerUserId)
+        .order('is_default', { ascending: false })
+        .order('name', { ascending: true });
+      if (error) throw new BadRequestException(error.message);
+      return (data ?? []).map((row) => ShopMapper.toDomain(row as ShopRow));
+    });
+  }
+
+  async findOwnedById(shopId: number, ownerUserId: number): Promise<Shop | null> {
+    return this.tenantDb.runWithoutTenant(async () => {
+      const { data, error } = await this.supabase.db
+        .from('shops')
+        .select('*')
+        .eq('id', shopId)
+        .eq('owner_user_id', ownerUserId)
+        .maybeSingle();
+      if (error) throw new BadRequestException(error.message);
+      return data ? ShopMapper.toDomain(data as ShopRow) : null;
+    });
+  }
+
+  async countActiveByOwner(ownerUserId: number): Promise<number> {
+    return this.tenantDb.runWithoutTenant(async () => {
+      const { count, error } = await this.supabase.db
+        .from('shops')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_user_id', ownerUserId)
+        .eq('is_active', true);
+      if (error) throw new BadRequestException(error.message);
+      return count ?? 0;
+    });
+  }
+
   async create(data: Record<string, unknown>): Promise<Shop> {
-    const { data: row, error } = await this.supabase.db
-      .from('shops')
-      .insert(data)
-      .select('*')
-      .single();
-    if (error || !row) {
-      throw new BadRequestException(error?.message ?? 'Création boutique impossible.');
-    }
-    return ShopMapper.toDomain(row as ShopRow);
+    return this.tenantDb.runWithoutTenant(async () => {
+      const { data: row, error } = await this.supabase.db
+        .from('shops')
+        .insert(data)
+        .select('*')
+        .single();
+      if (error || !row) {
+        throw new BadRequestException(error?.message ?? 'Création boutique impossible.');
+      }
+      return ShopMapper.toDomain(row as ShopRow);
+    });
   }
 
   async updateOwner(shopId: number, ownerUserId: number): Promise<void> {
@@ -39,5 +86,27 @@ export class SupabaseShopRepository extends ShopRepository {
       .update({ owner_user_id: ownerUserId })
       .eq('id', shopId);
     if (error) throw new NotFoundException(error.message);
+  }
+
+  async updateInShop(shopId: number, data: UpdateShopData): Promise<Shop> {
+    const { data: row, error } = await this.supabase.db
+      .from('shops')
+      .update(data)
+      .eq('id', shopId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+    if (!row) throw new NotFoundException('Boutique introuvable.');
+    return ShopMapper.toDomain(row as ShopRow);
+  }
+
+  async clearDefaultForOwner(ownerUserId: number): Promise<void> {
+    await this.tenantDb.runWithoutTenant(async () => {
+      const { error } = await this.supabase.db
+        .from('shops')
+        .update({ is_default: false })
+        .eq('owner_user_id', ownerUserId);
+      if (error) throw new BadRequestException(error.message);
+    });
   }
 }

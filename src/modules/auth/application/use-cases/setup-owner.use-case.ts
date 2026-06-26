@@ -1,10 +1,11 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RecoveryTokenService } from '../../../../core/security/recovery-token.service';
 import { PinHasherService } from '../../../../core/security/pin-hasher.service';
 import { AUTH_EVENTS, SetupCompletedEvent } from '../../../../core/events/auth.events';
 import { TenantDatabaseService } from '../../../tenants/tenant-database.service';
+import { normalizePhoneToWhatsApp } from '../../../../shared/utils/phone.util';
 import { nowMs } from '../../../../shared/utils/time.util';
 import { UserRole } from '../../../../shared/enums/user-role.enum';
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
@@ -28,16 +29,12 @@ export class SetupOwnerUseCase {
 
   async execute(command: SetupOwnerCommand) {
     return this.tenantDb.runWithoutTenant(async () => {
-      const count = await this.users.countAll();
-      if (count > 0) {
-        throw new ConflictException('L\'installation a déjà été effectuée.');
-      }
-
       const pin = Pin.create(command.pin);
       const pinHash = await this.pinHasher.hash(pin.value);
       const { token: recoveryToken, hash: recoveryHashPromise } = this.recoveryToken.generate();
       const recoveryHash = await recoveryHashPromise;
       const timestamp = nowMs();
+      const ownerPhone = normalizePhoneToWhatsApp(command.ownerPhone);
 
       const shop = await this.shops.create({
         name: command.shopName,
@@ -51,6 +48,7 @@ export class SetupOwnerUseCase {
       const user = await this.users.create({
         shop_id: shop.id,
         name: command.ownerName,
+        phone: ownerPhone,
         pin_hash: pinHash,
         role: UserRole.OWNER,
         emergency_recovery_hash: recoveryHash,
@@ -75,7 +73,8 @@ export class SetupOwnerUseCase {
         shopId: shop.id,
         userId: user.id,
         recoveryToken,
-        message: 'Installation réussie. Sauvegardez le fichier de récupération d\'urgence en lieu sûr.',
+        message:
+          'Boutique créée avec succès. Sauvegardez le fichier de récupération d\'urgence en lieu sûr.',
       };
     });
   }

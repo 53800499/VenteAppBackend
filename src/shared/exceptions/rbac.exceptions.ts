@@ -130,3 +130,27 @@ export class OwnerPromotionNotAllowedException extends DomainException {
     );
   }
 }
+
+export class OwnerShopAssignmentDeniedException extends DomainException {
+  constructor() {
+    super(
+      ErrorCode.USERS_OWNER_SHOP_ASSIGN_DENIED,
+      'Impossible de réaffecter un patron à une autre boutique.',
+      HttpStatus.FORBIDDEN,
+      undefined,
+      'Seuls les vendeurs et lecteurs peuvent être réaffectés.',
+    );
+  }
+}
+
+export class SelfShopAssignmentDeniedException extends DomainException {
+  constructor() {
+    super(
+      ErrorCode.USERS_SELF_SHOP_ASSIGN_DENIED,
+      'Vous ne pouvez pas modifier votre propre affectation boutique.',
+      HttpStatus.FORBIDDEN,
+      undefined,
+      'Demandez à un autre patron d\'effectuer ce changement.',
+    );
+  }
+}

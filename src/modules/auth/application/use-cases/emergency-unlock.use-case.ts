@@ -8,8 +8,7 @@ import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
-import { AuthSessionRepository } from '../../domain/repositories/auth-session.repository';
-import { SessionFactoryService } from '../../domain/services/session-factory.service';
+import { AuthTokenService } from '../../domain/services/auth-token.service';
 import { UserResolverService } from '../../domain/services/user-resolver.service';
 import { EmergencyUnlockCommand } from '../commands/auth.commands';
 import { AuthPresenter } from '../../presentation/presenters/auth.presenter';
@@ -21,9 +20,8 @@ export class EmergencyUnlockUseCase {
     private readonly users: UserRepository,
     private readonly shops: ShopRepository,
     private readonly settings: SettingsRepository,
-    private readonly sessions: AuthSessionRepository,
+    private readonly authTokenService: AuthTokenService,
     private readonly pinHasher: PinHasherService,
-    private readonly sessionFactory: SessionFactoryService,
     private readonly logAudit: LogAuditUseCase,
     private readonly presenter: AuthPresenter,
     private readonly events: EventEmitter2,
@@ -68,7 +66,11 @@ export class EmergencyUnlockUseCase {
       reason: 'Déblocage via fichier de récupération d\'urgence',
     });
 
-    const session = await this.sessions.create(this.sessionFactory.buildInsertPayload(user, settings));
+    const activeUser = { ...user, lastLoginAt: timestamp };
+    const { session, tokens } = await this.authTokenService.bootstrapSession(activeUser, settings.shopId, settings, {
+      deviceId: command.deviceId,
+      deviceLabel: command.deviceLabel,
+    });
     const shop = await this.shops.findShopById(command.shopId);
 
     this.events.emit(
@@ -78,10 +80,11 @@ export class EmergencyUnlockUseCase {
 
     return this.presenter.presentEmergencyUnlock({
       session,
-      user: { ...user, lastLoginAt: timestamp },
+      user: activeUser,
       settings,
       shopId: command.shopId,
       shopName: shop?.name ?? settings.shopName,
+      tokens,
     });
   }
 }

@@ -1,25 +1,30 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { msFromMinutes, nowMs } from '../../../../shared/utils/time.util';
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
-import { AuthSessionRepository } from '../../domain/repositories/auth-session.repository';
+import { UserSessionRepository } from '../../domain/repositories/user-session.repository';
 
 @Injectable()
 export class TouchSessionUseCase {
   constructor(
-    private readonly sessions: AuthSessionRepository,
+    private readonly sessions: UserSessionRepository,
     private readonly settings: SettingsRepository,
   ) {}
 
-  async execute(sessionToken: string, shopId: number): Promise<void> {
-    const session = await this.sessions.findByIdAndShop(sessionToken, shopId);
-    if (!session) throw new UnauthorizedException('Session invalide.');
-    if (session.expiresAt <= nowMs()) throw new UnauthorizedException('Session expirée.');
+  async execute(sessionId: string, shopId: number): Promise<void> {
+    const session = await this.sessions.findById(sessionId);
+    if (!session || session.isRevoked()) {
+      throw new UnauthorizedException('Session invalide.');
+    }
+    if (session.sessionExpiresAt <= nowMs()) {
+      throw new UnauthorizedException('Session expirée.');
+    }
 
-    const shopSettings = (await this.settings.findByShopId(session.shopId)) ??
-      this.settings.getDefault(session.shopId);
+    const shopSettings =
+      (await this.settings.findByShopId(shopId)) ??
+      this.settings.getDefault(shopId);
     const timestamp = nowMs();
-    const newExpiry = timestamp + msFromMinutes(shopSettings.autoLockMinutes);
+    const sessionExpiresAt = timestamp + msFromMinutes(shopSettings.autoLockMinutes);
 
-    await this.sessions.touchInShop(sessionToken, session.shopId, timestamp, newExpiry);
+    await this.sessions.touchById(sessionId, timestamp, sessionExpiresAt);
   }
 }

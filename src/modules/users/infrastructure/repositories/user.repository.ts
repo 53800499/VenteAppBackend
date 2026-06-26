@@ -83,6 +83,21 @@ export class SupabaseUserRepository extends UserRepository {
     return (count ?? 0) > 0;
   }
 
+  async existsByNameInShopExcluding(
+    shopId: number,
+    name: string,
+    excludeUserId: number,
+  ): Promise<boolean> {
+    const { count, error } = await this.supabase.db
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('shop_id', shopId)
+      .neq('id', excludeUserId)
+      .ilike('name', name);
+    if (error) throw new BadRequestException(error.message);
+    return (count ?? 0) > 0;
+  }
+
   async countOwnersByShop(shopId: number): Promise<number> {
     const { count, error } = await this.supabase.db
       .from('users')
@@ -118,5 +133,30 @@ export class SupabaseUserRepository extends UserRepository {
     if (!row) {
       throw new NotFoundException('Utilisateur introuvable dans cette boutique.');
     }
+  }
+
+  async updateById(id: number, data: Record<string, unknown>): Promise<void> {
+    const { data: row, error } = await this.supabase.db
+      .from('users')
+      .update(data)
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+    if (!row) {
+      throw new NotFoundException('Utilisateur introuvable.');
+    }
+  }
+
+  async findActiveByPhone(phone: string): Promise<User[]> {
+    const { data, error } = await this.supabase.db
+      .from('users')
+      .select('*')
+      .eq('phone', phone)
+      .eq('is_active', true)
+      .order('id');
+
+    if (error) throw new BadRequestException(error.message);
+    return (data ?? []).map((row) => UserMapper.toDomain(row as UserRow));
   }
 }

@@ -22,8 +22,7 @@ import { GetDashboardUseCase } from '../../application/use-cases/get-dashboard.u
 @Controller('dashboard')
 @UseInterceptors(TransformResponseInterceptor)
 @UseGuards(SessionGuard, TenantGuard, PermissionsGuard)
-@ApiSecurity('session-token')
-@ApiSecurity('user-id')
+@ApiSecurity('bearer')
 export class DashboardController {
   constructor(private readonly getDashboardUseCase: GetDashboardUseCase) {}
 
@@ -32,14 +31,27 @@ export class DashboardController {
   @ApiOperation({
     summary: 'Synthèse du tableau de bord (journée en cours)',
     description: [
-      '**Module 2** — KPIs du jour pour la boutique active (RG-DB-01 à RG-DB-06).',
-      '- Ventes annulées exclues (RG-DB-02)',
-      '- Données financières détaillées si permission `dashboard:financial`',
+      '**Permission** : `dashboard:read`',
+      '',
+      '**Module 2** — KPIs du jour pour la boutique active (fuseau Bénin UTC+1).',
+      '',
+      '**Règles** :',
+      '- RG-DB-01 : CA = somme des ventes `completed` du jour',
+      '- RG-DB-02 : ventes `cancelled` exclues',
+      '- RG-DB-03 : `lowStockCount` = produits non archivés avec stock <= seuil',
+      '- RG-DB-04 : `debtorCount` = clients avec dette ouverte',
+      '- RG-DB-05 : 5 dernières ventes du jour',
+      '',
+      '**Section `financial`** (bénéfice estimé, encaissements, dettes) :',
+      'visible uniquement si permission `dashboard:financial` (patron).',
     ].join('\n'),
   })
-  @ApiOkResponse({ type: DashboardResponseDto })
-  @ApiUnauthorizedResponse()
-  @ApiForbiddenResponse()
+  @ApiOkResponse({
+    type: DashboardResponseDto,
+    description: 'KPIs publics + section financière optionnelle',
+  })
+  @ApiUnauthorizedResponse({ description: 'Session invalide ou expirée' })
+  @ApiForbiddenResponse({ description: 'Permission `dashboard:read` requise' })
   dashboard(@CurrentAuth() auth: AuthContext) {
     return this.getDashboardUseCase.execute(auth);
   }

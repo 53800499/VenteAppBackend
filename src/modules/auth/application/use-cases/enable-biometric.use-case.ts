@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PinHasherService } from '../../../../core/security/pin-hasher.service';
 import { nowMs } from '../../../../shared/utils/time.util';
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
-import { AuthSessionRepository } from '../../domain/repositories/auth-session.repository';
+import { UserSessionRepository } from '../../domain/repositories/user-session.repository';
 import { Pin } from '../../domain/value-objects/pin.vo';
 import { EnableBiometricCommand } from '../commands/auth.commands';
 
@@ -10,13 +10,16 @@ import { EnableBiometricCommand } from '../commands/auth.commands';
 export class EnableBiometricUseCase {
   constructor(
     private readonly users: UserRepository,
-    private readonly sessions: AuthSessionRepository,
+    private readonly sessions: UserSessionRepository,
     private readonly pinHasher: PinHasherService,
   ) {}
 
   async execute(command: EnableBiometricCommand) {
-    const session = await this.sessions.findById(command.sessionToken);
-    if (!session || session.userId !== command.userId || session.expiresAt <= nowMs()) {
+    const session = await this.sessions.findById(command.sessionId);
+    if (!session || session.isRevoked() || session.userId !== command.userId) {
+      throw new UnauthorizedException('Session invalide ou expirée.');
+    }
+    if (!session.isSessionActive(nowMs())) {
       throw new UnauthorizedException('Session invalide ou expirée.');
     }
 

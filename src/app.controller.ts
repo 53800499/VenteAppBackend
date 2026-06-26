@@ -10,7 +10,11 @@ export class AppController {
   @Get()
   @ApiOperation({
     summary: 'Vérification de disponibilité',
-    description: 'Endpoint de santé minimal pour confirmer que l\'API répond.',
+    description: [
+      'Endpoint de santé minimal — confirme que l\'API NestJS répond.',
+      '',
+      'Préfixe global : `/api`. Documentation interactive : `/api/docs`.',
+    ].join('\n'),
   })
   @ApiOkResponse({
     schema: { type: 'string', example: 'Hello World!' },

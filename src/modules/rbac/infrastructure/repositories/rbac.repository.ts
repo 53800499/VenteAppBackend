@@ -253,4 +253,41 @@ export class SupabaseRbacRepository extends RbacRepository {
       .eq('permission_code', permissionCode);
     if (error) throw new BadRequestException(error.message);
   }
+
+  async deactivateAllUserOverrides(userId: number): Promise<void> {
+    const { error } = await this.supabase.db
+      .from('user_permission_overrides')
+      .update({ is_active: false, updated_at: nowMs() })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    if (error) throw new BadRequestException(error.message);
+  }
+
+  async updateOverridesShopForUser(userId: number, shopId: number): Promise<void> {
+    const { error } = await this.supabase.db
+      .from('user_permission_overrides')
+      .update({ shop_id: shopId, updated_at: nowMs() })
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    if (error) throw new BadRequestException(error.message);
+  }
+
+  async replaceUserOverrides(
+    userId: number,
+    shopId: number,
+    overrides: CreateOverrideInput[],
+  ): Promise<UserPermissionOverride[]> {
+    await this.deactivateAllUserOverrides(userId);
+
+    const results: UserPermissionOverride[] = [];
+    for (const input of overrides) {
+      const override = await this.createUserOverride({
+        ...input,
+        userId,
+        shopId,
+      });
+      results.push(override);
+    }
+    return results;
+  }
 }

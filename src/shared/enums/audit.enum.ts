@@ -1,8 +1,20 @@
 export enum AuditAction {
   EMERGENCY_UNLOCK = 'emergency_unlock',
   USER_ROLE_CHANGED = 'user_role_changed',
+  USER_SHOP_ASSIGNED = 'user_shop_assigned',
+  RBAC_OVERRIDES_REPLACED = 'rbac_overrides_replaced',
   DEBT_CREATED = 'debt_created',
   SALE_CANCELLED = 'sale_cancelled',
+  STOCK_ADJUSTED = 'stock_adjusted',
+  PRODUCT_PRICE_CHANGED = 'product_price_changed',
+  PRODUCT_ARCHIVED = 'product_archived',
+  PRODUCT_DELETED = 'product_deleted',
+  CATEGORY_DELETED = 'category_deleted',
+  SHOP_CREATED = 'shop_created',
+  SHOP_UPDATED = 'shop_updated',
+  SHOP_DEACTIVATED = 'shop_deactivated',
+  SHOP_DEFAULT_SET = 'shop_default_set',
+  SHOP_SWITCHED = 'shop_switched',
 }
 
 export enum AuditModule {
@@ -11,4 +23,6 @@ export enum AuditModule {
   USERS = 'users',
   SALES = 'sales',
   DEBTS = 'debts',
+  PRODUCTS = 'products',
+  SHOPS = 'shops',
 }

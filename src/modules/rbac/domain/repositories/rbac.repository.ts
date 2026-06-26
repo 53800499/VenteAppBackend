@@ -31,5 +31,12 @@ export abstract class RbacRepository {
 
   abstract createUserOverride(input: CreateOverrideInput): Promise<UserPermissionOverride>;
   abstract deactivateUserOverride(userId: number, shopId: number, permissionCode: string): Promise<void>;
+  abstract deactivateAllUserOverrides(userId: number): Promise<void>;
+  abstract updateOverridesShopForUser(userId: number, shopId: number): Promise<void>;
+  abstract replaceUserOverrides(
+    userId: number,
+    shopId: number,
+    overrides: CreateOverrideInput[],
+  ): Promise<UserPermissionOverride[]>;
   abstract findUserOverrides(userId: number, shopId: number): Promise<UserPermissionOverride[]>;
 }

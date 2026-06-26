@@ -1,4 +1,6 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, HttpStatus } from '@nestjs/common';
+import { ErrorCode } from '../enums/error-code.enum';
+import { DomainException } from './domain.exception';
 
 export class AccountLockedException extends ForbiddenException {
   constructor(lockedUntil: number, remainingSeconds: number) {
@@ -33,5 +35,18 @@ export class MaxAttemptsLockoutException extends ForbiddenException {
       lockoutCount,
       requiresEmergencyRecovery,
     });
+  }
+}
+
+export class WhatsappSendFailedException extends DomainException {
+  constructor(hint?: string) {
+    super(
+      ErrorCode.AUTH_WHATSAPP_SEND_FAILED,
+      'Envoi WhatsApp impossible. Réessayez plus tard.',
+      HttpStatus.SERVICE_UNAVAILABLE,
+      undefined,
+      hint ??
+        'Vérifiez WHATSAPP_ACCESS_TOKEN et WHATSAPP_PHONE_NUMBER_ID (token Meta valide, non expiré).',
+    );
   }
 }

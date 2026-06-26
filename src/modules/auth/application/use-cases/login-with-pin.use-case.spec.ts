@@ -11,8 +11,7 @@ import { User } from '../../../users/domain/entities/user.entity';
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
-import { AuthSessionRepository } from '../../domain/repositories/auth-session.repository';
-import { SessionFactoryService } from '../../domain/services/session-factory.service';
+import { AuthTokenService } from '../../domain/services/auth-token.service';
 import { UserResolverService } from '../../domain/services/user-resolver.service';
 import { AuthPresenter } from '../../presentation/presenters/auth.presenter';
 import { LoginWithPinUseCase } from './login-with-pin.use-case';
@@ -23,7 +22,7 @@ const baseUser = new User(
 
 describe('LoginWithPinUseCase', () => {
   let useCase: LoginWithPinUseCase;
-  let users: jest.Mocked<Pick<UserRepository, 'update'>>;
+  let users: jest.Mocked<Pick<UserRepository, 'updateInShop'>>;
 
   beforeEach(async () => {
     users = { updateInShop: jest.fn().mockResolvedValue(undefined) };
@@ -33,7 +32,6 @@ describe('LoginWithPinUseCase', () => {
         LoginWithPinUseCase,
         LockoutPolicyService,
         PinHasherService,
-        SessionFactoryService,
         AuthPresenter,
         {
           provide: PermissionService,
@@ -68,10 +66,24 @@ describe('LoginWithPinUseCase', () => {
             getDefault: jest.fn(),
           },
         },
-        { provide: ShopRepository, useValue: { findById: jest.fn() } },
+        { provide: ShopRepository, useValue: { findShopById: jest.fn() } },
         {
-          provide: AuthSessionRepository,
-          useValue: { create: jest.fn() },
+          provide: AuthTokenService,
+          useValue: {
+            bootstrapSession: jest.fn().mockResolvedValue({
+              session: {
+                id: 'session-uuid',
+                sessionExpiresAt: Date.now() + 300_000,
+              },
+              tokens: {
+                accessToken: 'access.jwt.token',
+                refreshToken: 'refresh-token-hex',
+                tokenType: 'Bearer',
+                accessExpiresAt: Date.now() + 900_000,
+                refreshExpiresAt: Date.now() + 2_592_000_000,
+              },
+            }),
+          },
         },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
@@ -89,7 +101,9 @@ describe('LoginWithPinUseCase', () => {
       resolve: jest.fn().mockResolvedValue(user),
     } as unknown as UserResolverService;
 
-    await expect(useCase.execute({ pin: '9999', shopId: 1 })).rejects.toMatchObject({
+    await expect(
+      useCase.execute({ pin: '9999', shopId: 1, deviceId: 'device-uuid' }),
+    ).rejects.toMatchObject({
       response: { remainingAttempts: 2 },
     });
     expect(users.updateInShop).toHaveBeenCalled();
@@ -104,8 +118,8 @@ describe('LoginWithPinUseCase', () => {
       resolve: jest.fn().mockResolvedValue(user),
     } as unknown as UserResolverService;
 
-    await expect(useCase.execute({ pin: '9999', shopId: 1 })).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      useCase.execute({ pin: '9999', shopId: 1, deviceId: 'device-uuid' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

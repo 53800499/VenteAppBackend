@@ -76,10 +76,25 @@ export class AuthShopDto {
 
 export class LoginSuccessDataDto {
   @ApiProperty({
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    description: 'Jeton à passer dans x-session-token',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'JWT access token — à passer en `Authorization: Bearer <token>`',
   })
-  sessionToken: string;
+  accessToken: string;
+
+  @ApiProperty({
+    example: 'a1b2c3d4e5f6...',
+    description: 'Refresh token opaque — à stocker de façon sécurisée côté client',
+  })
+  refreshToken: string;
+
+  @ApiProperty({ example: 'Bearer' })
+  tokenType: 'Bearer';
+
+  @ApiProperty({ example: 1719226500000, description: 'Expiration du JWT access (epoch ms)' })
+  accessExpiresAt: number;
+
+  @ApiProperty({ example: 1721817600000, description: 'Expiration du refresh token (epoch ms)' })
+  refreshExpiresAt: number;
 
   @ApiProperty({ type: AuthUserDto })
   user: AuthUserDto;
@@ -90,7 +105,7 @@ export class LoginSuccessDataDto {
   @ApiProperty({ example: 5, description: 'Durée d\'inactivité avant verrouillage (RG-AUTH-07)' })
   autoLockMinutes: number;
 
-  @ApiProperty({ example: 1719225900000, description: 'Expiration de la session (epoch ms)' })
+  @ApiProperty({ example: 1719225900000, description: 'Expiration session inactivité (epoch ms)' })
   expiresAt: number;
 }
 
@@ -151,4 +166,94 @@ export class TouchSessionDataDto {
 export class TouchSessionResponseDto extends ApiResponseDto<Record<string, never>> {
   @ApiProperty({ example: {} })
   declare data: Record<string, never>;
+}
+
+export class TokenRefreshDataDto {
+  @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
+  accessToken: string;
+
+  @ApiProperty({ example: 'new-refresh-token-hex...' })
+  refreshToken: string;
+
+  @ApiProperty({ example: 'Bearer' })
+  tokenType: 'Bearer';
+
+  @ApiProperty({ example: 1719226500000 })
+  accessExpiresAt: number;
+
+  @ApiProperty({ example: 1721817600000 })
+  refreshExpiresAt: number;
+
+  @ApiProperty({ example: 1719225900000, description: 'Expiration session inactivité (epoch ms)' })
+  expiresAt: number;
+}
+
+export class TokenRefreshResponseDto extends ApiResponseDto<TokenRefreshDataDto> {
+  @ApiProperty({ type: TokenRefreshDataDto })
+  declare data: TokenRefreshDataDto;
+}
+
+export class LogoutResponseDto {
+  @ApiProperty({ example: true })
+  loggedOut: boolean;
+}
+
+export class DeviceSessionDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  id: string;
+
+  @ApiProperty({ example: 1 })
+  userId: number;
+
+  @ApiProperty({ example: 'Kofi Agbovi' })
+  userName: string;
+
+  @ApiProperty({ example: 'device-uuid-stable' })
+  deviceId: string;
+
+  @ApiPropertyOptional({ example: 'Tablette caisse', nullable: true })
+  deviceLabel: string | null;
+
+  @ApiProperty({ example: 1719225600000 })
+  lastSeenAt: number;
+
+  @ApiProperty({ example: 1719225900000, description: 'Expiration session inactivité (epoch ms)' })
+  sessionExpiresAt: number;
+
+  @ApiProperty({ example: 1721817600000, description: 'Expiration refresh token (epoch ms)' })
+  refreshExpiresAt: number;
+
+  @ApiProperty({ example: true, description: 'True si c\'est la session de la requête courante' })
+  isCurrent: boolean;
+}
+
+export class DeviceSessionListResponseDto extends ApiResponseDto<DeviceSessionDto[]> {
+  @ApiProperty({ type: [DeviceSessionDto] })
+  declare data: DeviceSessionDto[];
+}
+
+export class RevokeDeviceSessionDataDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  id: string;
+
+  @ApiProperty({ example: true })
+  revoked: boolean;
+}
+
+export class RevokeDeviceSessionResponseDto extends ApiResponseDto<RevokeDeviceSessionDataDto> {
+  @ApiProperty({ type: RevokeDeviceSessionDataDto })
+  declare data: RevokeDeviceSessionDataDto;
+}
+
+export class SwitchShopDataDto {
+  @ApiProperty({ example: 2 })
+  activeShopId: number;
+
+  @ApiProperty({ example: { id: 2, name: 'Boutique Ganhi' } })
+  shop: { id: number; name: string };
+}
+
+export class SwitchShopResponseDto extends ApiResponseDto<SwitchShopDataDto> {
+  @ApiProperty({ type: SwitchShopDataDto })
+  declare data: SwitchShopDataDto;
 }

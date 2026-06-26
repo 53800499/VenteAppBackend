@@ -12,6 +12,7 @@ import {
   SelfAccountDeactivationException,
 } from '../../../../shared/exceptions/rbac.exceptions';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
+import { normalizePhoneToWhatsApp } from '../../../../shared/utils/phone.util';
 import { nowMs } from '../../../../shared/utils/time.util';
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
 import { Pin } from '../../../auth/domain/value-objects/pin.vo';
@@ -58,7 +59,7 @@ export class CreateShopUserUseCase {
 
   async execute(
     auth: AuthContext,
-    input: { name: string; pin: string; role: UserRole.SELLER | UserRole.VIEWER },
+    input: { name: string; pin: string; phone: string; role: UserRole.SELLER | UserRole.VIEWER },
   ) {
     const exists = await this.users.existsByNameInShop(auth.shopId, input.name);
     if (exists) {
@@ -67,11 +68,13 @@ export class CreateShopUserUseCase {
 
     const pin = Pin.create(input.pin);
     const pinHash = await this.pinHasher.hash(pin.value);
+    const phone = normalizePhoneToWhatsApp(input.phone);
     const timestamp = nowMs();
 
     const user = await this.users.create({
       shop_id: auth.shopId,
       name: input.name,
+      phone,
       pin_hash: pinHash,
       role: input.role,
       created_at: timestamp,

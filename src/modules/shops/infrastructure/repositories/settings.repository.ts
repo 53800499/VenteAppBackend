@@ -30,6 +30,14 @@ export class SupabaseSettingsRepository extends SettingsRepository {
     if (error) throw new BadRequestException(error.message);
   }
 
+  async updateShopIdentity(
+    shopId: number,
+    data: { shop_name?: string; shop_phone?: string | null; shop_address?: string | null; updated_at: number },
+  ): Promise<void> {
+    const { error } = await this.supabase.db.from('settings').update(data).eq('shop_id', shopId);
+    if (error) throw new BadRequestException(error.message);
+  }
+
   getDefault(shopId: number): ShopSettings {
     return new ShopSettings(
       1,

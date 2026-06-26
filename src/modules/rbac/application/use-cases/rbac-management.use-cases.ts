@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PermissionService } from '../../../../core/security/permission.service';
-import { AuditModule } from '../../../../shared/enums/audit.enum';
+import { AuditAction, AuditModule } from '../../../../shared/enums/audit.enum';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import {
   OverrideNotFoundException,
@@ -9,12 +9,13 @@ import {
   SystemRoleProtectedException,
 } from '../../../../shared/exceptions/rbac.exceptions';
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
-import { UserRepository } from '../../../users/domain/repositories/user.repository';
+import { UserAccessPolicy } from '../../../users/domain/policies/user-access.policy';
 import { RbacRepository } from '../../domain/repositories/rbac.repository';
 import { RbacPermissionValidator } from '../../domain/services/rbac-permission.validator';
 import {
   CreatePermissionOverrideDto,
   CreateShopRoleDto,
+  ReplaceUserPermissionOverridesDto,
   SetRolePermissionsDto,
   UpdateShopRoleDto,
 } from '../dto/rbac-management.dto';
@@ -172,18 +173,14 @@ export class SetRolePermissionsUseCase {
 
 @Injectable()
 export class ListUserOverridesUseCase {
-  constructor(private readonly rbac: RbacRepository, private readonly users: UserRepository) {}
+  constructor(
+    private readonly rbac: RbacRepository,
+    private readonly userAccess: UserAccessPolicy,
+  ) {}
 
   async execute(auth: AuthContext, userId: number) {
-    await this.assertUserInShop(auth, userId);
-    return this.rbac.findUserOverrides(userId, auth.shopId);
-  }
-
-  private async assertUserInShop(auth: AuthContext, userId: number) {
-    const user = await this.users.findByIdAndShop(userId, auth.shopId);
-    if (!user) {
-      throw new NotFoundException('Utilisateur introuvable dans cette boutique.');
-    }
+    const user = await this.userAccess.assertAccessible(auth, userId);
+    return this.rbac.findUserOverrides(userId, user.shopId);
   }
 }
 
@@ -191,19 +188,19 @@ export class ListUserOverridesUseCase {
 export class CreateUserOverrideUseCase {
   constructor(
     private readonly rbac: RbacRepository,
-    private readonly users: UserRepository,
+    private readonly userAccess: UserAccessPolicy,
     private readonly validator: RbacPermissionValidator,
     private readonly permissionService: PermissionService,
     private readonly logAudit: LogAuditUseCase,
   ) {}
 
   async execute(auth: AuthContext, userId: number, input: CreatePermissionOverrideDto) {
-    await this.assertUserInShop(auth, userId);
+    const user = await this.userAccess.assertAccessible(auth, userId);
     await this.validator.validateCode(input.permissionCode);
 
     const override = await this.rbac.createUserOverride({
       userId,
-      shopId: auth.shopId,
+      shopId: user.shopId,
       permissionCode: input.permissionCode,
       effect: input.effect,
       reason: input.reason,
@@ -211,7 +208,7 @@ export class CreateUserOverrideUseCase {
       expiresAt: input.expiresAt,
     });
 
-    this.permissionService.invalidateUserPermissions(userId, auth.shopId);
+    this.permissionService.invalidateUserPermissions(userId, user.shopId);
 
     await this.logAudit.execute({
       shopId: auth.shopId,
@@ -226,33 +223,26 @@ export class CreateUserOverrideUseCase {
 
     return override;
   }
-
-  private async assertUserInShop(auth: AuthContext, userId: number) {
-    const user = await this.users.findByIdAndShop(userId, auth.shopId);
-    if (!user) {
-      throw new NotFoundException('Utilisateur introuvable dans cette boutique.');
-    }
-  }
 }
 
 @Injectable()
 export class RemoveUserOverrideUseCase {
   constructor(
     private readonly rbac: RbacRepository,
-    private readonly users: UserRepository,
+    private readonly userAccess: UserAccessPolicy,
     private readonly permissionService: PermissionService,
     private readonly logAudit: LogAuditUseCase,
   ) {}
 
   async execute(auth: AuthContext, userId: number, permissionCode: string) {
-    await this.assertUserInShop(auth, userId);
+    const user = await this.userAccess.assertAccessible(auth, userId);
 
-    const overrides = await this.rbac.findUserOverrides(userId, auth.shopId);
+    const overrides = await this.rbac.findUserOverrides(userId, user.shopId);
     const exists = overrides.some((o) => o.permissionCode === permissionCode && o.isActive);
     if (!exists) throw new OverrideNotFoundException(userId, permissionCode);
 
-    await this.rbac.deactivateUserOverride(userId, auth.shopId, permissionCode);
-    this.permissionService.invalidateUserPermissions(userId, auth.shopId);
+    await this.rbac.deactivateUserOverride(userId, user.shopId, permissionCode);
+    this.permissionService.invalidateUserPermissions(userId, user.shopId);
 
     await this.logAudit.execute({
       shopId: auth.shopId,
@@ -267,11 +257,92 @@ export class RemoveUserOverrideUseCase {
 
     return { removed: true, userId, permissionCode };
   }
+}
 
-  private async assertUserInShop(auth: AuthContext, userId: number) {
-    const user = await this.users.findByIdAndShop(userId, auth.shopId);
-    if (!user) {
-      throw new NotFoundException('Utilisateur introuvable dans cette boutique.');
+@Injectable()
+export class ReplaceUserOverridesUseCase {
+  constructor(
+    private readonly rbac: RbacRepository,
+    private readonly userAccess: UserAccessPolicy,
+    private readonly validator: RbacPermissionValidator,
+    private readonly permissionService: PermissionService,
+    private readonly logAudit: LogAuditUseCase,
+  ) {}
+
+  async execute(auth: AuthContext, userId: number, input: ReplaceUserPermissionOverridesDto) {
+    const user = await this.userAccess.assertAccessible(auth, userId);
+
+    for (const item of input.overrides) {
+      await this.validator.validateCode(item.permissionCode);
     }
+
+    const replaced = await this.rbac.replaceUserOverrides(
+      userId,
+      user.shopId,
+      input.overrides.map((item) => ({
+        userId,
+        shopId: user.shopId,
+        permissionCode: item.permissionCode,
+        effect: item.effect,
+        reason: item.reason,
+        grantedBy: auth.userId,
+        expiresAt: item.expiresAt,
+      })),
+    );
+
+    this.permissionService.invalidateUserPermissions(userId, user.shopId);
+
+    await this.logAudit.execute({
+      shopId: auth.shopId,
+      userId: auth.userId,
+      action: AuditAction.RBAC_OVERRIDES_REPLACED,
+      module: AuditModule.USERS,
+      entityId: userId,
+      entityTable: 'user_permission_overrides',
+      newValue: {
+        count: replaced.length,
+        permissions: replaced.map((o) => o.permissionCode),
+      },
+      reason: input.reason ?? 'Remplacement des overrides utilisateur',
+    });
+
+    return {
+      userId,
+      overrides: replaced.map((o) => ({
+        permissionCode: o.permissionCode,
+        effect: o.effect,
+        reason: o.reason,
+        expiresAt: o.expiresAt,
+      })),
+      permissions: await this.permissionService.resolveForUser({
+        userId: user.id,
+        role: user.role,
+        shopId: user.shopId,
+      }),
+    };
+  }
+}
+
+@Injectable()
+export class GetUserEffectivePermissionsUseCase {
+  constructor(
+    private readonly userAccess: UserAccessPolicy,
+    private readonly permissionService: PermissionService,
+  ) {}
+
+  async execute(auth: AuthContext, userId: number) {
+    const user = await this.userAccess.assertAccessible(auth, userId);
+
+    return {
+      userId: user.id,
+      role: user.role,
+      roleLabel: await this.permissionService.getRoleLabel(user.role),
+      shopId: user.shopId,
+      permissions: await this.permissionService.resolveForUser({
+        userId: user.id,
+        role: user.role,
+        shopId: user.shopId,
+      }),
+    };
   }
 }

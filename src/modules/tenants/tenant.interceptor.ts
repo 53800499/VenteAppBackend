@@ -6,15 +6,11 @@ import {
 } from '@nestjs/common';
 import { Observable, from, switchMap } from 'rxjs';
 import { AuthenticatedRequest } from '../../shared/interfaces/auth-context.interface';
-import { TenantContextService } from './tenant-context.service';
 import { TenantDatabaseService } from './tenant-database.service';
 
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  constructor(
-    private readonly tenantContext: TenantContextService,
-    private readonly tenantDb: TenantDatabaseService,
-  ) {}
+  constructor(private readonly tenantDb: TenantDatabaseService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -24,10 +20,8 @@ export class TenantInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    if (!this.tenantContext.isSet()) {
-      this.tenantContext.setShopId(shopId);
-    }
-
+    // SessionGuard + TenantGuard ont déjà positionné TenantContextService.
+    // On assure seulement le contexte RLS Supabase avant le handler.
     return from(this.tenantDb.setShopId(shopId)).pipe(switchMap(() => next.handle()));
   }
 }

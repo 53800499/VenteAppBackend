@@ -5,3 +5,4 @@ export * from './shops/shops.module';
 export * from './tenants/tenants.module';
 export * from './rbac/rbac.module';
 export * from './dashboard/dashboard.module';
+export * from './inventory/inventory.module';

@@ -8,8 +8,10 @@ import {
   CreateShopRoleUseCase,
   CreateUserOverrideUseCase,
   DeleteShopRoleUseCase,
+  GetUserEffectivePermissionsUseCase,
   ListUserOverridesUseCase,
   RemoveUserOverrideUseCase,
+  ReplaceUserOverridesUseCase,
   SetRolePermissionsUseCase,
   UpdateShopRoleUseCase,
 } from './application/use-cases/rbac-management.use-cases';
@@ -48,6 +50,8 @@ import { RbacPersistenceModule } from './rbac-persistence.module';
     ListUserOverridesUseCase,
     CreateUserOverrideUseCase,
     RemoveUserOverrideUseCase,
+    ReplaceUserOverridesUseCase,
+    GetUserEffectivePermissionsUseCase,
   ],
   exports: [RbacPersistenceModule, GetMyPermissionsUseCase],
 })

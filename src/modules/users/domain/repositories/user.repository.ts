@@ -9,7 +9,14 @@ export abstract class UserRepository {
   abstract findActiveSummariesByShop(shopId: number): Promise<UserSummary[]>;
   abstract findAllByShop(shopId: number): Promise<User[]>;
   abstract existsByNameInShop(shopId: number, name: string): Promise<boolean>;
+  abstract existsByNameInShopExcluding(
+    shopId: number,
+    name: string,
+    excludeUserId: number,
+  ): Promise<boolean>;
   abstract countOwnersByShop(shopId: number): Promise<number>;
   abstract create(data: Record<string, unknown>): Promise<User>;
   abstract updateInShop(id: number, shopId: number, data: Record<string, unknown>): Promise<void>;
+  abstract updateById(id: number, data: Record<string, unknown>): Promise<void>;
+  abstract findActiveByPhone(phone: string): Promise<User[]>;
 }

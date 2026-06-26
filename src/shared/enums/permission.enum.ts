@@ -41,6 +41,7 @@ export enum Permission {
   USERS_CREATE = 'users:create',
   USERS_UPDATE_ROLE = 'users:update_role',
   USERS_DEACTIVATE = 'users:deactivate',
+  USERS_ASSIGN_SHOP = 'users:assign_shop',
 
   // RBAC (consultation & gestion)
   RBAC_READ = 'rbac:read',
@@ -53,4 +54,12 @@ export enum Permission {
   // Rapports
   REPORTS_READ = 'reports:read',
   REPORTS_FINANCIAL = 'reports:financial',
+
+  // Boutiques (multi-boutiques V3)
+  SHOPS_READ = 'shops:read',
+  SHOPS_CREATE = 'shops:create',
+  SHOPS_UPDATE = 'shops:update',
+  SHOPS_DEACTIVATE = 'shops:deactivate',
+  SHOPS_SWITCH = 'shops:switch',
+  SHOPS_CONSOLIDATED_READ = 'shops:consolidated_read',
 }

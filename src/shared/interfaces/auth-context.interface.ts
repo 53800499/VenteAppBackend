@@ -6,7 +6,8 @@ export interface AuthContext {
   shopId: number;
   role: UserRole;
   permissions: Permission[];
-  sessionToken: string;
+  /** ID session interne (auth_sessions) — non exposé au client */
+  sessionId: string;
 }
 
 export interface AuthenticatedRequest {

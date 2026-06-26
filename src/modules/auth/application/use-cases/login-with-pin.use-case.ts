@@ -19,8 +19,7 @@ import { nowMs } from '../../../../shared/utils/time.util';
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
-import { AuthSessionRepository } from '../../domain/repositories/auth-session.repository';
-import { SessionFactoryService } from '../../domain/services/session-factory.service';
+import { AuthTokenService } from '../../domain/services/auth-token.service';
 import { UserResolverService } from '../../domain/services/user-resolver.service';
 import { Pin } from '../../domain/value-objects/pin.vo';
 import { LoginPinCommand } from '../commands/auth.commands';
@@ -33,10 +32,9 @@ export class LoginWithPinUseCase {
     private readonly users: UserRepository,
     private readonly shops: ShopRepository,
     private readonly settings: SettingsRepository,
-    private readonly sessions: AuthSessionRepository,
     private readonly pinHasher: PinHasherService,
     private readonly lockoutPolicy: LockoutPolicyService,
-    private readonly sessionFactory: SessionFactoryService,
+    private readonly authTokenService: AuthTokenService,
     private readonly presenter: AuthPresenter,
     private readonly configService: ConfigService,
     private readonly events: EventEmitter2,
@@ -74,12 +72,11 @@ export class LoginWithPinUseCase {
       version: user.version + 1,
     });
 
-    const session = await this.sessions.create(
-      this.sessionFactory.buildInsertPayload(
-        { ...user, lastLoginAt: loginAt } as typeof user,
-        settings,
-      ),
-    );
+    const activeUser = { ...user, lastLoginAt: loginAt };
+    const { session, tokens } = await this.authTokenService.bootstrapSession(activeUser, settings.shopId, settings, {
+      deviceId: command.deviceId,
+      deviceLabel: command.deviceLabel,
+    });
 
     const shop = await this.shops.findShopById(command.shopId);
     this.events.emit(
@@ -89,10 +86,11 @@ export class LoginWithPinUseCase {
 
     return this.presenter.presentLoginSuccess({
       session,
-      user: { ...user, lastLoginAt: loginAt },
+      user: activeUser,
       settings,
       shopId: command.shopId,
       shopName: shop?.name ?? settings.shopName,
+      tokens,
     });
   }
 

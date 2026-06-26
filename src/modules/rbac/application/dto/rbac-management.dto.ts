@@ -109,3 +109,20 @@ export class CreatePermissionOverrideDto {
   @IsOptional()
   expiresAt?: number;
 }
+
+export class ReplaceUserPermissionOverridesDto {
+  @ApiProperty({
+    type: [CreatePermissionOverrideDto],
+    description: 'Liste complète des overrides actifs (remplace l\'existant)',
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePermissionOverrideDto)
+  overrides: CreatePermissionOverrideDto[];
+
+  @ApiPropertyOptional({ example: 'Mise à jour des droits exceptionnels' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
