@@ -159,7 +159,7 @@ export class SupabaseDashboardReadRepository extends DashboardReadRepository {
       .from('debts')
       .select('amount_remaining, customer_id')
       .eq('shop_id', shopId)
-      .eq('status', 'open')
+      .in('status', ['open', 'partial'])
       .gt('amount_remaining', 0);
 
     if (error) throw new BadRequestException(error.message);

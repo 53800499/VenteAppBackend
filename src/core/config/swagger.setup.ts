@@ -132,6 +132,21 @@ export function setupSwagger(app: INestApplication): void {
         '| `POST /` | `sales:create` (vente standard UC-05) |',
         '| `POST /quick` | `sales:create` (vente rapide RG-VTE-09) |',
         '| `PATCH :id/cancel` | `sales:cancel` (patron, UC-07) |',
+        '',
+        '### Module 5 — Paiements & Dettes',
+        '**Dettes** (`/api/debts`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `debts:read` |',
+        '| `GET :id` | `debts:read` |',
+        '| `POST :id/payments` | `debts:payment` + `payments:create` (UC-08) |',
+        '| `PATCH :id/forgive` | `debts:forgive` (patron) |',
+        '',
+        '**Paiements** (`/api/payments`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `payments:read` |',
+        '| `GET :id` | `payments:read` |',
       ].join('\n'),
     )
     .setVersion('1.0.0')
@@ -154,6 +169,8 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Inventaire — Catégories', 'Module 3 — Catégories produits (ECR-02)')
     .addTag('Inventaire — Produits', 'Module 3 — Catalogue, stock, archivage et mouvements (ECR-03)')
     .addTag('Ventes', 'Module 4 — Ventes standard et rapide, reçus, annulation (ECR-04, UC-05, UC-07)')
+    .addTag('Dettes', 'Module 5 — Créances clients, remboursements et pardon (UC-08)')
+    .addTag('Paiements', 'Module 5 — Historique des paiements et acomptes')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, {

@@ -1,8 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { UsersModule } from '../users/users.module';
 import {
   CancelSaleUseCase,
   CreateQuickSaleUseCase,
@@ -24,10 +26,12 @@ import { SalesController } from './presentation/controllers/sales.controller';
 
 @Module({
   imports: [
+    CoreModule,
     AuthorizationGuardsModule,
     AuditModule,
     InventoryModule,
     forwardRef(() => AuthModule),
+    forwardRef(() => UsersModule),
   ],
   controllers: [SalesController],
   providers: [

@@ -177,16 +177,33 @@ export class CreateStandardSaleUseCase {
     }
 
     if (totals.amountCredit > 0 && input.customerId) {
-      await this.debts.create({
+      const debt = await this.debts.create({
         shop_id: auth.shopId,
         customer_id: input.customerId,
         sale_id: sale.id,
+        user_id: auth.userId,
         original_amount: totals.amountCredit,
         amount_paid: 0,
         amount_remaining: totals.amountCredit,
         status: 'open',
         created_at: timestamp,
+        updated_at: timestamp,
         version: 1,
+      });
+
+      await this.logAudit.execute({
+        shopId: auth.shopId,
+        userId: auth.userId,
+        action: AuditAction.DEBT_CREATED,
+        module: AuditModule.DEBTS,
+        entityId: debt.id,
+        entityTable: 'debts',
+        newValue: {
+          saleId: sale.id,
+          customerId: input.customerId,
+          originalAmount: totals.amountCredit,
+        },
+        reason: 'Dette créée lors de la vente à crédit',
       });
     }
 

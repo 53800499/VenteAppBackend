@@ -39,8 +39,9 @@ export class SupabaseSaleDebtRepository extends SaleDebtRepository {
     const { error } = await this.supabase.db
       .from('debts')
       .update({
-        status: 'closed',
+        status: 'cancelled',
         amount_remaining: 0,
+        updated_at: updatedAt,
         version: 1,
       })
       .eq('sale_id', saleId)

@@ -7,3 +7,4 @@ export * from './rbac/rbac.module';
 export * from './dashboard/dashboard.module';
 export * from './inventory/inventory.module';
 export * from './sales/sales.module';
+export * from './payments/payments.module';
