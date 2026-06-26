@@ -4,6 +4,7 @@ export enum AuditAction {
   USER_SHOP_ASSIGNED = 'user_shop_assigned',
   RBAC_OVERRIDES_REPLACED = 'rbac_overrides_replaced',
   DEBT_CREATED = 'debt_created',
+  SALE_CREATED = 'sale_created',
   SALE_CANCELLED = 'sale_cancelled',
   STOCK_ADJUSTED = 'stock_adjusted',
   PRODUCT_PRICE_CHANGED = 'product_price_changed',

@@ -123,6 +123,15 @@ export function setupSwagger(app: INestApplication): void {
         '| `DELETE :id` | `inventory:archive` |',
         '| `POST :id/stock-adjustments` | `inventory:adjust` |',
         '| `GET :id/stock-movements` | `inventory:read` |',
+        '',
+        '### Module 4 — Ventes (`/api/sales`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `sales:read` |',
+        '| `GET :id` | `sales:read` |',
+        '| `POST /` | `sales:create` (vente standard UC-05) |',
+        '| `POST /quick` | `sales:create` (vente rapide RG-VTE-09) |',
+        '| `PATCH :id/cancel` | `sales:cancel` (patron, UC-07) |',
       ].join('\n'),
     )
     .setVersion('1.0.0')
@@ -144,6 +153,7 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Boutiques', 'Gestion multi-boutiques — création, sélection et bascule (RG-SHOP)')
     .addTag('Inventaire — Catégories', 'Module 3 — Catégories produits (ECR-02)')
     .addTag('Inventaire — Produits', 'Module 3 — Catalogue, stock, archivage et mouvements (ECR-03)')
+    .addTag('Ventes', 'Module 4 — Ventes standard et rapide, reçus, annulation (ECR-04, UC-05, UC-07)')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, {
