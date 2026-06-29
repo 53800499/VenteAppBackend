@@ -133,16 +133,7 @@ export function setupSwagger(app: INestApplication): void {
         '| `POST /quick` | `sales:create` (vente rapide RG-VTE-09) |',
         '| `PATCH :id/cancel` | `sales:cancel` (patron, UC-07) |',
         '',
-        '### Module 5 — Paiements & Dettes',
-        '**Dettes** (`/api/debts`)',
-        '| Route | Permission |',
-        '|-------|------------|',
-        '| `GET /` | `debts:read` |',
-        '| `GET :id` | `debts:read` |',
-        '| `POST :id/payments` | `debts:payment` + `payments:create` (UC-08) |',
-        '| `PATCH :id/forgive` | `debts:forgive` (patron) |',
-        '',
-        '**Paiements** (`/api/payments`)',
+        '### Module 5 — Paiements (`/api/payments`)',
         '| Route | Permission |',
         '|-------|------------|',
         '| `GET /` | `payments:read` |',
@@ -159,6 +150,16 @@ export function setupSwagger(app: INestApplication): void {
         '| `POST /` | `customers:write` |',
         '| `PATCH :id` | `customers:write` |',
         '| `PATCH :id/archive` | `customers:archive` |',
+        '',
+        '### Module 7 — Dettes (`/api/debts`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET summary` | `debts:read` (UC-11) |',
+        '| `GET /` | `debts:read` |',
+        '| `GET :id` | `debts:read` |',
+        '| `GET :id/history` | `debts:read` (UC-13) |',
+        '| `POST :id/payments` | `debts:payment` + `payments:create` |',
+        '| `PATCH :id/forgive` | `debts:forgive` (UC-12, patron) |',
       ].join('\n'),
     )
     .setVersion('1.0.0')
@@ -181,7 +182,7 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Inventaire — Catégories', 'Module 3 — Catégories produits (ECR-02)')
     .addTag('Inventaire — Produits', 'Module 3 — Catalogue, stock, archivage et mouvements (ECR-03)')
     .addTag('Ventes', 'Module 4 — Ventes standard et rapide, reçus, annulation (ECR-04, UC-05, UC-07)')
-    .addTag('Dettes', 'Module 5 — Créances clients, remboursements et pardon (UC-08)')
+    .addTag('Dettes', 'Module 7 — Créances, remboursements, pardon et historique audit (UC-12, UC-13)')
     .addTag('Paiements', 'Module 5 — Historique des paiements et acomptes')
     .addTag('Clients', 'Module 6 — Répertoire clients, fiches, débiteurs et rappels WhatsApp (ECR-08)')
     .build();

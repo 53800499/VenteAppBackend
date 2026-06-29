@@ -1,11 +1,19 @@
 import { Debt, DebtStatus } from '../entities/debt.entity';
-import { PaymentMethod } from '../entities/payment.entity';
+
+export type DebtRepaymentMethod = 'cash' | 'mtn_momo' | 'moov_money' | 'other';
 
 export interface DebtListFilters {
   status?: DebtStatus;
   customerId?: number;
   criticalOnly?: boolean;
   limit?: number;
+}
+
+export interface DebtShopSummary {
+  totalDebt: number;
+  openDebtsCount: number;
+  criticalDebtsCount: number;
+  debtorCount: number;
 }
 
 export interface RecordDebtPaymentData {
@@ -15,7 +23,7 @@ export interface RecordDebtPaymentData {
   user_id: number;
   receipt_number: string;
   amount: number;
-  method: PaymentMethod;
+  method: DebtRepaymentMethod;
   reference: string | null;
   change_given: number;
   note: string | null;
@@ -36,6 +44,7 @@ export interface ForgiveDebtData {
 export abstract class DebtRepository {
   abstract findByIdAndShop(id: number, shopId: number, withPayments?: boolean): Promise<Debt | null>;
   abstract listByShop(shopId: number, filters?: DebtListFilters): Promise<Debt[]>;
+  abstract getShopSummary(shopId: number): Promise<DebtShopSummary>;
   abstract recordPayment(data: RecordDebtPaymentData): Promise<{ paymentId: number; debtPaymentId: number }>;
   abstract forgive(id: number, shopId: number, data: ForgiveDebtData): Promise<void>;
 }

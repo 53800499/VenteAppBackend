@@ -10,7 +10,6 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import type { PaymentMethod } from '../../domain/entities/payment.entity';
 
 export class RecordDebtPaymentDto {
   @ApiProperty({ example: 5000, description: 'Montant remboursé en FCFA (RG-DET-04)' })
@@ -20,7 +19,7 @@ export class RecordDebtPaymentDto {
 
   @ApiProperty({ enum: ['cash', 'mtn_momo', 'moov_money', 'other'] })
   @IsEnum(['cash', 'mtn_momo', 'moov_money', 'other'])
-  method: PaymentMethod;
+  method: 'cash' | 'mtn_momo' | 'moov_money' | 'other';
 
   @ApiPropertyOptional({
     example: '+22990123456',
@@ -140,8 +139,62 @@ export class DebtResponseDto {
   @ApiProperty()
   isCritical: boolean;
 
+  @ApiProperty({ description: 'Jours sans remboursement (RG-DET-08)' })
+  daysWithoutPayment: number;
+
+  @ApiPropertyOptional()
+  lastPaymentAt: number | null;
+
   @ApiPropertyOptional({ type: [DebtPaymentResponseDto] })
   payments?: DebtPaymentResponseDto[];
+}
+
+export class DebtsSummaryResponseDto {
+  @ApiProperty()
+  totalDebt: number;
+
+  @ApiProperty()
+  openDebtsCount: number;
+
+  @ApiProperty()
+  criticalDebtsCount: number;
+
+  @ApiProperty()
+  debtorCount: number;
+}
+
+export class DebtAuditEntryDto {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty()
+  action: string;
+
+  @ApiPropertyOptional()
+  userName: string | null;
+
+  @ApiPropertyOptional()
+  reason: string | null;
+
+  @ApiPropertyOptional()
+  oldValue: Record<string, unknown> | null;
+
+  @ApiPropertyOptional()
+  newValue: Record<string, unknown> | null;
+
+  @ApiProperty()
+  createdAt: number;
+}
+
+export class DebtHistoryResponseDto {
+  @ApiProperty()
+  debtId: number;
+
+  @ApiProperty({ type: [DebtAuditEntryDto] })
+  timeline: DebtAuditEntryDto[];
+
+  @ApiProperty({ type: [DebtPaymentResponseDto] })
+  payments: DebtPaymentResponseDto[];
 }
 
 export class RecordDebtPaymentResponseDto {

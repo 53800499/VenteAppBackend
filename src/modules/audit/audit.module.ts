@@ -8,6 +8,6 @@ import { SupabaseAuditLogRepository } from './infrastructure/repositories/audit-
     { provide: AuditLogRepository, useClass: SupabaseAuditLogRepository },
     LogAuditUseCase,
   ],
-  exports: [LogAuditUseCase],
+  exports: [LogAuditUseCase, AuditLogRepository],
 })
 export class AuditModule {}

@@ -29,7 +29,9 @@ import type { AuthContext } from '../../../../shared/interfaces/auth-context.int
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
 import { TenantGuard } from '../../../tenants/tenant.guard';
 import {
+  DebtHistoryResponseDto,
   DebtResponseDto,
+  DebtsSummaryResponseDto,
   ForgiveDebtDto,
   ForgiveDebtResponseDto,
   ListDebtsQueryDto,
@@ -38,7 +40,9 @@ import {
 } from '../../application/dto/debt.dto';
 import {
   ForgiveDebtUseCase,
+  GetDebtHistoryUseCase,
   GetDebtUseCase,
+  GetDebtsSummaryUseCase,
   ListDebtsUseCase,
   RecordDebtPaymentUseCase,
 } from '../../application/use-cases/debt.use-cases';
@@ -50,11 +54,24 @@ import {
 @ApiSecurity('bearer')
 export class DebtsController {
   constructor(
+    private readonly getSummary: GetDebtsSummaryUseCase,
     private readonly listDebts: ListDebtsUseCase,
     private readonly getDebt: GetDebtUseCase,
+    private readonly getHistory: GetDebtHistoryUseCase,
     private readonly recordPayment: RecordDebtPaymentUseCase,
     private readonly forgiveDebt: ForgiveDebtUseCase,
   ) {}
+
+  @Get('summary')
+  @RequirePermissions(Permission.DEBTS_READ)
+  @ApiOperation({
+    summary: 'Synthèse des dettes de la boutique (UC-11)',
+    description: 'Total global, nombre de débiteurs et dettes critiques (RG-DET-07, RG-DET-10).',
+  })
+  @ApiOkResponse({ type: DebtsSummaryResponseDto })
+  summary(@CurrentAuth() auth: AuthContext) {
+    return this.getSummary.execute(auth);
+  }
 
   @Get()
   @RequirePermissions(Permission.DEBTS_READ)
@@ -72,6 +89,19 @@ export class DebtsController {
     return this.listDebts.execute(auth, query);
   }
 
+  @Get(':id/history')
+  @RequirePermissions(Permission.DEBTS_READ)
+  @ApiOperation({
+    summary: 'Historique complet d\'une dette (UC-13)',
+    description: 'Timeline d\'audit + remboursements (RG-DET-11).',
+  })
+  @ApiParam({ name: 'id', example: 1 })
+  @ApiOkResponse({ type: DebtHistoryResponseDto })
+  @ApiNotFoundResponse({ description: 'Dette introuvable' })
+  history(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
+    return this.getHistory.execute(auth, id);
+  }
+
   @Get(':id')
   @RequirePermissions(Permission.DEBTS_READ)
   @ApiOperation({ summary: 'Détail d\'une dette avec historique des remboursements' })
@@ -85,11 +115,11 @@ export class DebtsController {
   @Post(':id/payments')
   @RequirePermissions(Permission.DEBTS_PAYMENT, Permission.PAYMENTS_CREATE)
   @ApiOperation({
-    summary: 'Enregistrer un remboursement sur une dette (UC-08)',
+    summary: 'Enregistrer un remboursement sur une dette',
     description: [
       '**Permissions** : `debts:payment` + `payments:create`',
       '',
-      'RG-PAY-01 à 08, RG-DET-04 à 05 : acompte partiel ou total, reçu PAY-YYYYMMDD-NNNN.',
+      'RG-DET-04 à 05 : acompte partiel ou total, reçu PAY-YYYYMMDD-NNNN.',
       'Mobile Money : référence/téléphone obligatoire (RG-PAY-02).',
     ].join('\n'),
   })
@@ -107,7 +137,7 @@ export class DebtsController {
   @Patch(':id/forgive')
   @RequirePermissions(Permission.DEBTS_FORGIVE)
   @ApiOperation({
-    summary: 'Pardonner une dette (patron)',
+    summary: 'Pardonner une dette (UC-12)',
     description: [
       '**Permission** : `debts:forgive` — **Patron uniquement** (RG-DET-06)',
       '',

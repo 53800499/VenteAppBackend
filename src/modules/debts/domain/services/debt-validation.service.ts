@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentMethod } from '../entities/payment.entity';
+import { DebtRepaymentMethod } from '../repositories/debt.repository';
 import {
   DebtForgiveReasonTooShortException,
   DebtInvalidAmountException,
+  DebtMomoReferenceRequiredException,
   DebtNotOpenException,
-  PaymentMomoReferenceRequiredException,
-} from '../../exceptions/payments.exceptions';
+} from '../../exceptions/debts.exceptions';
 
 const CRITICAL_DEBT_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const FORGIVE_REASON_MIN_LENGTH = 10;
 
 @Injectable()
-export class PaymentValidationService {
+export class DebtValidationService {
   assertDebtRepaymentAmount(amount: number, amountRemaining: number): void {
     if (amount <= 0) {
       throw new DebtInvalidAmountException('Le montant du remboursement doit être supérieur à 0 FCFA.');
@@ -29,13 +29,13 @@ export class PaymentValidationService {
     }
   }
 
-  assertMomoReference(method: PaymentMethod, reference?: string | null): void {
+  assertMomoReference(method: DebtRepaymentMethod, reference?: string | null): void {
     if ((method === 'mtn_momo' || method === 'moov_money') && (!reference || reference.trim().length < 8)) {
-      throw new PaymentMomoReferenceRequiredException();
+      throw new DebtMomoReferenceRequiredException();
     }
   }
 
-  computeChangeGiven(method: PaymentMethod, amount: number, amountTendered?: number): number {
+  computeChangeGiven(method: DebtRepaymentMethod, amount: number, amountTendered?: number): number {
     if (method !== 'cash' || amountTendered == null) return 0;
     if (amountTendered < amount) {
       throw new DebtInvalidAmountException('Le montant remis en espèces est insuffisant.');
@@ -55,5 +55,18 @@ export class PaymentValidationService {
 
   isCriticalDebt(createdAt: number, amountPaid: number, now: number): boolean {
     return amountPaid === 0 && now - createdAt >= CRITICAL_DEBT_DAYS_MS;
+  }
+
+  computeDaysWithoutPayment(
+    createdAt: number,
+    amountPaid: number,
+    lastPaymentAt: number | null,
+    now: number,
+  ): number {
+    if (amountPaid === 0) {
+      return Math.floor((now - createdAt) / (24 * 60 * 60 * 1000));
+    }
+    if (lastPaymentAt == null) return 0;
+    return Math.floor((now - lastPaymentAt) / (24 * 60 * 60 * 1000));
   }
 }

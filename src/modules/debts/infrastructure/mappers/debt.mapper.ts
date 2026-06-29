@@ -1,5 +1,5 @@
 import { Debt, DebtPayment, DebtStatus } from '../../domain/entities/debt.entity';
-import { DebtPaymentRow, DebtRow } from '../persistence/payment.row';
+import { DebtPaymentRow, DebtRow } from '../persistence/debt.row';
 
 export class DebtMapper {
   static toDomain(row: DebtRow, payments: DebtPaymentRow[] = []): Debt {

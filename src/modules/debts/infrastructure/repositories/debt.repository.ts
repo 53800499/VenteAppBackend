@@ -4,11 +4,14 @@ import { Debt } from '../../domain/entities/debt.entity';
 import {
   DebtListFilters,
   DebtRepository,
+  DebtShopSummary,
   ForgiveDebtData,
   RecordDebtPaymentData,
 } from '../../domain/repositories/debt.repository';
 import { DebtMapper } from '../mappers/debt.mapper';
-import { DebtPaymentRow, DebtRow } from '../persistence/payment.row';
+import { DebtPaymentRow, DebtRow } from '../persistence/debt.row';
+
+const CRITICAL_CUTOFF_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class SupabaseDebtRepository extends DebtRepository {
@@ -51,7 +54,7 @@ export class SupabaseDebtRepository extends DebtRepository {
     if (filters?.customerId) query = query.eq('customer_id', filters.customerId);
 
     if (filters?.criticalOnly) {
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - CRITICAL_CUTOFF_MS;
       query = query
         .in('status', ['open', 'partial'])
         .eq('amount_paid', 0)
@@ -66,6 +69,35 @@ export class SupabaseDebtRepository extends DebtRepository {
     const { data, error } = await query;
     if (error) throw new BadRequestException(error.message);
     return (data ?? []).map((row) => DebtMapper.toDomain(row as DebtRow));
+  }
+
+  async getShopSummary(shopId: number): Promise<DebtShopSummary> {
+    const cutoff = Date.now() - CRITICAL_CUTOFF_MS;
+    const { data, error } = await this.supabase.db
+      .from('debts')
+      .select('customer_id, amount_remaining, amount_paid, created_at')
+      .eq('shop_id', shopId)
+      .in('status', ['open', 'partial'])
+      .gt('amount_remaining', 0);
+    if (error) throw new BadRequestException(error.message);
+
+    const rows = data ?? [];
+    const debtors = new Set<number>();
+    let criticalDebtsCount = 0;
+
+    for (const row of rows) {
+      debtors.add(row.customer_id as number);
+      if (Number(row.amount_paid) === 0 && (row.created_at as number) <= cutoff) {
+        criticalDebtsCount += 1;
+      }
+    }
+
+    return {
+      totalDebt: rows.reduce((sum, r) => sum + Number(r.amount_remaining), 0),
+      openDebtsCount: rows.length,
+      criticalDebtsCount,
+      debtorCount: debtors.size,
+    };
   }
 
   async recordPayment(data: RecordDebtPaymentData): Promise<{ paymentId: number; debtPaymentId: number }> {
