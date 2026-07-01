@@ -1,11 +1,20 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../../../infrastructure/supabase/supabase.service';
 import { throwSupabaseError } from '../../../../shared/utils/throw-supabase-error.util';
+import { ShopConfiguration } from '../../domain/entities/shop-configuration.entity';
 import { ShopSettings } from '../../domain/entities/shop.entity';
-import { SettingsRepository } from '../../domain/repositories/settings.repository';
+import {
+  RecordBackupData,
+  SettingsRepository,
+  UpdateShopConfigurationData,
+  UpdateSyncSettingsData,
+} from '../../domain/repositories/settings.repository';
 import { ShopMapper } from '../mappers/shop.mapper';
 import { SettingsRow } from '../persistence/shop.row';
+
+const CONFIGURATION_SELECT =
+  'id, shop_id, shop_name, shop_phone, shop_address, shop_logo_path, currency, language, default_alert_threshold, auto_lock_minutes, receipt_footer, backup_last_at, backup_path, cloud_sync_enabled, cloud_last_sync_at, updated_at';
 
 @Injectable()
 export class SupabaseSettingsRepository extends SettingsRepository {
@@ -24,6 +33,45 @@ export class SupabaseSettingsRepository extends SettingsRepository {
       .maybeSingle();
     if (error) throwSupabaseError(error);
     return data ? ShopMapper.settingsToDomain(data as SettingsRow) : null;
+  }
+
+  async findConfigurationByShopId(shopId: number): Promise<ShopConfiguration | null> {
+    const { data, error } = await this.supabase.db
+      .from('settings')
+      .select(CONFIGURATION_SELECT)
+      .eq('shop_id', shopId)
+      .maybeSingle();
+    if (error) throwSupabaseError(error);
+    return data ? ShopMapper.configurationToDomain(data as SettingsRow) : null;
+  }
+
+  async updateConfiguration(
+    shopId: number,
+    data: UpdateShopConfigurationData,
+  ): Promise<ShopConfiguration> {
+    const { error } = await this.supabase.db.from('settings').update(data).eq('shop_id', shopId);
+    if (error) throwSupabaseError(error);
+    return this.requireConfiguration(shopId);
+  }
+
+  async recordBackup(shopId: number, data: RecordBackupData): Promise<ShopConfiguration> {
+    const { error } = await this.supabase.db.from('settings').update(data).eq('shop_id', shopId);
+    if (error) throwSupabaseError(error);
+    return this.requireConfiguration(shopId);
+  }
+
+  async updateSyncSettings(shopId: number, data: UpdateSyncSettingsData): Promise<ShopConfiguration> {
+    const { error } = await this.supabase.db.from('settings').update(data).eq('shop_id', shopId);
+    if (error) throwSupabaseError(error);
+    return this.requireConfiguration(shopId);
+  }
+
+  private async requireConfiguration(shopId: number): Promise<ShopConfiguration> {
+    const config = await this.findConfigurationByShopId(shopId);
+    if (!config) {
+      throw new NotFoundException('Paramètres boutique introuvables.');
+    }
+    return config;
   }
 
   async create(data: Record<string, unknown>): Promise<void> {

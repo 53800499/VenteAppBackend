@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
-import { AuditModule } from '../audit/audit.module';
+import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
 import { RbacPersistenceModule } from '../rbac/rbac-persistence.module';
 import { ShopsModule } from '../shops/shops.module';
@@ -26,7 +26,7 @@ import { UsersController } from './presentation/controllers/users.controller';
     RbacPersistenceModule,
     forwardRef(() => AuthModule),
     forwardRef(() => ShopsModule),
-    AuditModule,
+    AuditPersistenceModule,
     AuthorizationGuardsModule,
   ],
   controllers: [UsersController],

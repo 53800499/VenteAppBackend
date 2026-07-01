@@ -160,6 +160,37 @@ export function setupSwagger(app: INestApplication): void {
         '| `GET :id/history` | `debts:read` (UC-13) |',
         '| `POST :id/payments` | `debts:payment` + `payments:create` |',
         '| `PATCH :id/forgive` | `debts:forgive` (UC-12, patron) |',
+        '',
+        '### Module 8 — Statistiques & Rapports (`/api/reports`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `reports:read` (+ `reports:financial` pour section financière) |',
+        '| Query `consolidated=true` | `shops:consolidated_read` (V3, patron) |',
+        '',
+        '### Module 9 — Notifications (`/api/notifications`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET settings` | `settings:read` |',
+        '| `PATCH settings` | `settings:write` |',
+        '| `GET pending` | `dashboard:read` (candidats notifications locales) |',
+        '| `POST ack` | `dashboard:read` (quota rappels dette RG-NOTIF-03) |',
+        '',
+        '### Module 10 — Paramètres & Configuration (`/api/settings`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `settings:read` |',
+        '| `PATCH /` | `settings:write` |',
+        '| `POST backup` | `settings:write` (enregistrer sauvegarde RG-PARAM-04) |',
+        '| `PATCH sync` | `settings:write` (sync cloud V2) |',
+        '',
+        '### Module 12 — Audit & Journal (`/api/audit`)',
+        '| Route | Permission |',
+        '|-------|------------|',
+        '| `GET /` | `audit:read` (patron, RG-AUD-01) |',
+        '| `GET filters` | `audit:read` |',
+        '| `GET export` | `audit:read` (UC-22, export JSON → PDF mobile) |',
+        '| `GET entities/:table/:id` | `audit:read` (RG-AUD-06) |',
+        '| `GET :id` | `audit:read` |',
       ].join('\n'),
     )
     .setVersion('1.0.0')
@@ -185,6 +216,10 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Dettes', 'Module 7 — Créances, remboursements, pardon et historique audit (UC-12, UC-13)')
     .addTag('Paiements', 'Module 5 — Historique des paiements et acomptes')
     .addTag('Clients', 'Module 6 — Répertoire clients, fiches, débiteurs et rappels WhatsApp (ECR-08)')
+    .addTag('Statistiques & Rapports', 'Module 8 — KPIs période, top produits, recouvrement, vue consolidée V3')
+    .addTag('Notifications', 'Module 9 — Préférences et candidats pour notifications locales intelligentes')
+    .addTag('Paramètres & Configuration', 'Module 10 — Boutique, sécurité, reçus, sauvegarde et sync cloud')
+    .addTag('Audit & Journal', 'Module 12 — Journal des actions sensibles (patron, RG-AUD)')
     .build();
 
   const document = SwaggerModule.createDocument(app, config, {

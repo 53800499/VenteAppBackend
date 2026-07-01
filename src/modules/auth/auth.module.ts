@@ -4,7 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { SessionGuard } from '../../shared/guards/session.guard';
-import { AuditModule } from '../audit/audit.module';
+import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { ShopsModule } from '../shops/shops.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -44,8 +44,8 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     CoreModule,
     AuthorizationGuardsModule,
     forwardRef(() => UsersModule),
-    ShopsModule,
-    AuditModule,
+    forwardRef(() => ShopsModule),
+    AuditPersistenceModule,
     TenantsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -85,6 +85,6 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     SwitchShopUseCase,
     SessionGuard,
   ],
-  exports: [UserSessionRepository, AuthTokenService, SessionGuard, ShopsModule],
+  exports: [UserSessionRepository, AuthTokenService, SessionGuard],
 })
 export class AuthModule {}

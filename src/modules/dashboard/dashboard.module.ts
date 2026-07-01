@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuthModule } from '../auth/auth.module';
+import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
 import { GetDashboardUseCase } from './application/use-cases/get-dashboard.use-case';
 import { DashboardReadRepository } from './domain/repositories/dashboard-read.repository';
@@ -13,6 +14,7 @@ import { DashboardController } from './presentation/controllers/dashboard.contro
   imports: [
     CoreModule,
     AuthorizationGuardsModule,
+    ShopsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],

@@ -1,8 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
-import { AuditModule } from '../audit/audit.module';
+import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
+import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
 import {
   CreateCategoryUseCase,
@@ -37,7 +38,8 @@ import { ProductsController } from './presentation/controllers/products.controll
   imports: [
     CoreModule,
     AuthorizationGuardsModule,
-    AuditModule,
+    AuditPersistenceModule,
+    ShopsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],

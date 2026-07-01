@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuthModule } from '../auth/auth.module';
+import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
 import { GetPaymentUseCase, ListPaymentsUseCase } from './application/use-cases/payment.use-cases';
 import { PaymentRepository } from './domain/repositories/payment.repository';
@@ -13,6 +14,7 @@ import { PaymentsController } from './presentation/controllers/payments.controll
   imports: [
     CoreModule,
     AuthorizationGuardsModule,
+    ShopsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],

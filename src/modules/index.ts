@@ -1,4 +1,5 @@
 export * from './auth/auth.module';
+export * from './audit/audit-persistence.module';
 export * from './audit/audit.module';
 export * from './users/users.module';
 export * from './shops/shops.module';
@@ -10,3 +11,6 @@ export * from './sales/sales.module';
 export * from './payments/payments.module';
 export * from './customers/customers.module';
 export * from './debts/debts.module';
+export * from './reports/reports.module';
+export * from './notifications/notifications.module';
+export * from './settings/settings.module';

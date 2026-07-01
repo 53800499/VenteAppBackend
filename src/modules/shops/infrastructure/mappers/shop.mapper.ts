@@ -1,4 +1,5 @@
 import { Shop, ShopSettings } from '../../domain/entities/shop.entity';
+import { ShopConfiguration } from '../../domain/entities/shop-configuration.entity';
 import { SettingsRow, ShopRow } from '../persistence/shop.row';
 
 export class ShopMapper {
@@ -22,6 +23,27 @@ export class ShopMapper {
       row.shop_name,
       row.shop_logo_path,
       row.auto_lock_minutes,
+    );
+  }
+
+  static configurationToDomain(row: SettingsRow): ShopConfiguration {
+    return new ShopConfiguration(
+      row.id,
+      row.shop_id,
+      row.shop_name,
+      row.shop_phone ?? null,
+      row.shop_address ?? null,
+      row.shop_logo_path,
+      row.currency ?? 'FCFA',
+      row.language ?? 'fr',
+      row.default_alert_threshold ?? 5,
+      row.auto_lock_minutes,
+      row.receipt_footer ?? null,
+      row.backup_last_at ?? null,
+      row.backup_path ?? null,
+      row.cloud_sync_enabled ?? false,
+      row.cloud_last_sync_at ?? null,
+      row.updated_at ?? Date.now(),
     );
   }
 }

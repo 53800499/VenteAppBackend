@@ -21,6 +21,9 @@ export enum AuditAction {
   CUSTOMER_ARCHIVED = 'customer_archived',
   CUSTOMER_CREATED = 'customer_created',
   CUSTOMER_UPDATED = 'customer_updated',
+  SETTINGS_UPDATED = 'settings_updated',
+  BACKUP_RECORDED = 'backup_recorded',
+  SYNC_SETTINGS_UPDATED = 'sync_settings_updated',
 }
 
 export enum AuditModule {

@@ -2,7 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
-import { AuditModule } from '../audit/audit.module';
+import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -26,7 +26,7 @@ import { ShopsController } from './presentation/controllers/shops.controller';
     CoreModule,
     ConfigModule,
     AuthorizationGuardsModule,
-    AuditModule,
+    AuditPersistenceModule,
     TenantsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
