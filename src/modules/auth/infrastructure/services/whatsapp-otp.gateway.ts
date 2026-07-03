@@ -1,12 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WhatsappSendFailedException } from '../../../../shared/exceptions/auth.exceptions';
+import { WhatsappSendResult } from './whatsapp-send-result';
 
 interface WhatsappApiError {
   error?: {
     message?: string;
     code?: number;
     type?: string;
+    error_subcode?: number;
   };
 }
 
@@ -16,14 +18,18 @@ export class WhatsappOtpGateway {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async sendOtpCode(phoneDigits: string, code: string): Promise<void> {
+  async sendOtpCode(phoneDigits: string, code: string): Promise<WhatsappSendResult> {
     const enabled = this.configService.get<boolean>('whatsapp.enabled', false);
     const devLog = this.configService.get<boolean>('whatsapp.devLogCodes', true);
     const fallbackOnError = this.configService.get<boolean>('whatsapp.fallbackOnError', devLog);
 
     if (!enabled) {
-      this.logDevCode(phoneDigits, code, 'WHATSAPP_ENABLED=false');
-      return;
+      return this.devFallback(
+        phoneDigits,
+        code,
+        devLog,
+        'WhatsApp désactivé sur le serveur (WHATSAPP_ENABLED=false).',
+      );
     }
 
     const accessToken = this.configService.get<string>('whatsapp.accessToken', '').trim();
@@ -34,8 +40,12 @@ export class WhatsappOtpGateway {
 
     if (!accessToken || !phoneNumberId) {
       if (fallbackOnError) {
-        this.logDevCode(phoneDigits, code, 'configuration WhatsApp incomplète');
-        return;
+        return this.devFallback(
+          phoneDigits,
+          code,
+          devLog,
+          'Configuration WhatsApp incomplète (token ou phone_number_id manquant).',
+        );
       }
       throw new WhatsappSendFailedException(
         'Définissez WHATSAPP_ACCESS_TOKEN et WHATSAPP_PHONE_NUMBER_ID, ou WHATSAPP_ENABLED=false en local.',
@@ -75,7 +85,7 @@ export class WhatsappOtpGateway {
     });
 
     if (response.ok) {
-      return;
+      return { channel: 'whatsapp' };
     }
 
     const detail = await response.text();
@@ -88,20 +98,20 @@ export class WhatsappOtpGateway {
 
     const metaMessage = parsed?.error?.message ?? detail;
     const metaCode = parsed?.error?.code;
-    const metaSubcode = (parsed?.error as { error_subcode?: number } | undefined)?.error_subcode;
+    const metaSubcode = parsed?.error?.error_subcode;
     this.logger.error(
       `WhatsApp API error: ${response.status} ${metaMessage}${metaCode ? ` (code ${metaCode})` : ''}`,
     );
 
+    const userReason =
+      metaSubcode === 131030 || metaMessage.includes('not in allowed list')
+        ? 'Numéro non autorisé en mode test Meta — ajoutez-le dans Meta Developer → WhatsApp → destinataires de test.'
+        : response.status === 401
+          ? 'Token Meta invalide ou expiré.'
+          : `Erreur API WhatsApp (${response.status}).`;
+
     if (fallbackOnError) {
-      const reason =
-        metaSubcode === 131030 || metaMessage.includes('not in allowed list')
-          ? 'numéro destinataire non autorisé en mode test Meta (131030)'
-          : response.status === 401
-            ? 'token Meta invalide ou expiré (401)'
-            : `erreur API ${response.status}`;
-      this.logDevCode(phoneDigits, code, reason);
-      return;
+      return this.devFallback(phoneDigits, code, devLog, userReason);
     }
 
     const hint =
@@ -114,9 +124,19 @@ export class WhatsappOtpGateway {
     throw new WhatsappSendFailedException(hint);
   }
 
-  private logDevCode(phoneDigits: string, code: string, reason: string): void {
+  private devFallback(
+    phoneDigits: string,
+    code: string,
+    devLog: boolean,
+    reason: string,
+  ): WhatsappSendResult {
     this.logger.warn(
       `[DEV] Code WhatsApp pour +${phoneDigits} : ${code} (${reason} — message non envoyé via Meta)`,
     );
+    return {
+      channel: 'dev',
+      warning: reason,
+      devCode: devLog ? code : undefined,
+    };
   }
 }

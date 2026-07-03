@@ -76,12 +76,28 @@ export class RequestWhatsappOtpUseCase {
       }),
     );
 
-    await this.whatsapp.sendOtpCode(phone, code);
+    const delivery = await this.whatsapp.sendOtpCode(phone, code);
+    const masked = maskPhone(phone);
+
+    let message: string;
+    if (delivery.channel === 'whatsapp') {
+      message = `Code envoyé sur WhatsApp au ${masked}.`;
+    } else if (delivery.devCode) {
+      message =
+        'WhatsApp non disponible — utilisez le code de vérification affiché ci-dessous.';
+    } else {
+      message =
+        delivery.warning ??
+        'Impossible d\'envoyer le code sur WhatsApp. Contactez l\'administrateur.';
+    }
 
     return {
-      maskedPhone: maskPhone(phone),
+      maskedPhone: masked,
       expiresInSeconds: Math.floor(otpTtlMs / 1000),
-      message: `Code envoyé sur WhatsApp au ${maskPhone(phone)}.`,
+      message,
+      deliveryChannel: delivery.channel,
+      deliveryWarning: delivery.warning,
+      devCode: delivery.devCode,
       phoneE164: formatPhoneE164(phone),
     };
   }

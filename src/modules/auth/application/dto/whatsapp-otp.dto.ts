@@ -79,6 +79,21 @@ export class RequestWhatsappOtpDataDto {
 
   @ApiProperty({ example: 'Code envoyé sur WhatsApp.' })
   message: string;
+
+  @ApiProperty({ enum: ['whatsapp', 'dev'], example: 'whatsapp' })
+  deliveryChannel: 'whatsapp' | 'dev';
+
+  @ApiProperty({
+    required: false,
+    description: 'Raison si le message n\'a pas été envoyé via WhatsApp',
+  })
+  deliveryWarning?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Code OTP visible en développement (WHATSAPP_DEV_LOG_CODES)',
+  })
+  devCode?: string;
 }
 
 export class VerifyWhatsappOtpDataDto {
