@@ -17,6 +17,7 @@ import {
 } from './application/use-cases/user-management.use-cases';
 import { UserAccessPolicy } from './domain/policies/user-access.policy';
 import { UserRepository } from './domain/repositories/user.repository';
+import { RoleAssignmentValidator } from './domain/services/role-assignment.validator';
 import { SupabaseUserRepository } from './infrastructure/repositories/user.repository';
 import { UsersController } from './presentation/controllers/users.controller';
 
@@ -33,6 +34,7 @@ import { UsersController } from './presentation/controllers/users.controller';
   providers: [
     { provide: UserRepository, useClass: SupabaseUserRepository },
     UserAccessPolicy,
+    RoleAssignmentValidator,
     ListShopUsersUseCase,
     CreateShopUserUseCase,
     ChangeUserRoleUseCase,

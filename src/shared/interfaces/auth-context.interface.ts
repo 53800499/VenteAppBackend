@@ -1,10 +1,9 @@
-import { UserRole } from '../enums/user-role.enum';
 import { Permission } from '../enums/permission.enum';
 
 export interface AuthContext {
   userId: number;
   shopId: number;
-  role: UserRole;
+  role: string;
   permissions: Permission[];
   /** ID session interne (auth_sessions) — non exposé au client */
   sessionId: string;

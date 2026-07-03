@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min, MinLength } from 'class-validator';
-import { UserRole } from '../../../../shared/enums/user-role.enum';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min, MinLength } from 'class-validator';
 
 export class CreateShopUserDto {
   @ApiProperty({ example: 'Amina Koffi' })
@@ -20,9 +19,13 @@ export class CreateShopUserDto {
   @MinLength(8)
   phone: string;
 
-  @ApiProperty({ enum: [UserRole.SELLER, UserRole.VIEWER], example: UserRole.SELLER })
-  @IsEnum(UserRole)
-  role: UserRole.SELLER | UserRole.VIEWER;
+  @ApiProperty({
+    example: 'seller',
+    description: 'Code rôle (seller, viewer ou rôle boutique shop_{id}_{slug})',
+  })
+  @IsString()
+  @IsNotEmpty()
+  role: string;
 }
 
 export class DeactivateUserDto {
@@ -47,9 +50,13 @@ export class AssignUserShopDto {
 }
 
 export class ChangeUserRoleDto {
-  @ApiProperty({ enum: UserRole, example: UserRole.SELLER })
-  @IsEnum(UserRole)
-  role: UserRole;
+  @ApiProperty({
+    example: 'seller',
+    description: 'Code rôle (seller, viewer ou rôle boutique shop_{id}_{slug})',
+  })
+  @IsString()
+  @IsNotEmpty()
+  role: string;
 
   @ApiPropertyOptional({ example: 'Promotion vendeur senior' })
   @IsOptional()

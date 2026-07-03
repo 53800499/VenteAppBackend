@@ -19,6 +19,7 @@ import { Pin } from '../../../auth/domain/value-objects/pin.vo';
 import { RoleChangePolicy } from '../../../rbac/domain/policies/role-change.policy';
 import { User } from '../../domain/entities/user.entity';
 import { UserRepository } from '../../domain/repositories/user.repository';
+import { RoleAssignmentValidator } from '../../domain/services/role-assignment.validator';
 
 @Injectable()
 export class ListShopUsersUseCase {
@@ -55,12 +56,14 @@ export class CreateShopUserUseCase {
   constructor(
     private readonly users: UserRepository,
     private readonly pinHasher: PinHasherService,
+    private readonly roleAssignment: RoleAssignmentValidator,
   ) {}
 
   async execute(
     auth: AuthContext,
-    input: { name: string; pin: string; phone: string; role: UserRole.SELLER | UserRole.VIEWER },
+    input: { name: string; pin: string; phone: string; role: string },
   ) {
+    await this.roleAssignment.assertAssignable(input.role, auth.shopId);
     const exists = await this.users.existsByNameInShop(auth.shopId, input.name);
     if (exists) {
       throw new ConflictException('Un utilisateur avec ce nom existe déjà dans la boutique.');
@@ -96,18 +99,21 @@ export class ChangeUserRoleUseCase {
     private readonly users: UserRepository,
     private readonly logAudit: LogAuditUseCase,
     private readonly permissionService: PermissionService,
+    private readonly roleAssignment: RoleAssignmentValidator,
   ) {}
 
   async execute(
     auth: AuthContext,
     targetUserId: number,
-    newRole: UserRole,
+    newRole: string,
     reason?: string,
   ) {
     const target = await this.users.findByIdAndShop(targetUserId, auth.shopId);
     if (!target) {
       throw new NotFoundException('Utilisateur introuvable dans cette boutique.');
     }
+
+    await this.roleAssignment.assertAssignable(newRole, auth.shopId);
 
     const ownerCount = await this.users.countOwnersByShop(auth.shopId);
     RoleChangePolicy.validate({

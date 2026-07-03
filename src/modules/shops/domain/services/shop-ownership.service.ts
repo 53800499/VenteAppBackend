@@ -13,7 +13,7 @@ export class ShopOwnershipService {
     private readonly users: UserRepository,
   ) {}
 
-  async assertOwnerAccess(userId: number, role: UserRole, shopId: number): Promise<Shop> {
+  async assertOwnerAccess(userId: number, role: string, shopId: number): Promise<Shop> {
     if (role !== UserRole.OWNER) {
       throw new ForbiddenException('Réservé au patron.');
     }
@@ -40,7 +40,7 @@ export class ShopOwnershipService {
    */
   async resolveActiveShop(
     userId: number,
-    role: UserRole,
+    role: string,
     homeShopId: number,
     sessionDefaultShopId: number,
     requestedShopId?: number,

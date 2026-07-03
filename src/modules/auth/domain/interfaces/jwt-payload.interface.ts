@@ -1,8 +1,6 @@
-import { UserRole } from '../../../../shared/enums/user-role.enum';
-
 export interface JwtAccessPayload {
   sub: number;
-  role: UserRole;
+  role: string;
   sid: string;
   type: 'access';
 }

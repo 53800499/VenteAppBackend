@@ -6,7 +6,7 @@ export class User {
     public readonly shopId: number,
     public readonly name: string,
     public readonly pinHash: string,
-    public readonly role: UserRole,
+    public readonly role: string,
     public readonly isActive: boolean,
     public readonly avatarPath: string | null,
     public readonly lastLoginAt: number | null,
@@ -24,6 +24,6 @@ export class User {
 export interface UserSummary {
   id: number;
   name: string;
-  role: UserRole;
+  role: string;
   biometricEnabled: boolean;
 }

@@ -9,7 +9,7 @@ import { User } from '../../../users/domain/entities/user.entity';
 export interface RoleChangeContext {
   actorUserId: number;
   target: User;
-  newRole: UserRole;
+  newRole: string;
   ownerCount: number;
 }
 

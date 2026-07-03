@@ -11,7 +11,7 @@ const CACHE_PREFIX = 'rbac:perms:';
 
 export interface ResolvePermissionsInput {
   userId: number;
-  role: UserRole;
+  role: string;
   shopId: number;
 }
 
@@ -98,8 +98,9 @@ export class EffectivePermissionResolver {
     return chain.reverse();
   }
 
-  private resolveFromStaticMap(role: UserRole): Permission[] {
-    return [...ROLE_PERMISSIONS[role]];
+  private resolveFromStaticMap(role: string): Permission[] {
+    const mapped = ROLE_PERMISSIONS[role as UserRole];
+    return mapped ? [...mapped] : [];
   }
 
   private toPermissionEnum(codes: string[]): Permission[] {

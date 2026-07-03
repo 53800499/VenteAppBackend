@@ -37,7 +37,7 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    if (!required.includes(auth.role)) {
+    if (!required.includes(auth.role as UserRole)) {
       throw new InsufficientRoleException(required, auth.role);
     }
 

@@ -7,7 +7,7 @@ import { RbacRepository } from '../../modules/rbac/domain/repositories/rbac.repo
 
 export interface ResolveUserPermissionsInput {
   userId: number;
-  role: UserRole;
+  role: string;
   shopId: number;
 }
 

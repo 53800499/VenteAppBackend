@@ -9,7 +9,7 @@ export interface ShopMembershipDto {
   userId: number;
   shopId: number;
   shopName: string;
-  role: UserRole;
+  role: string;
   roleLabel: string;
   isDefault: boolean;
 }

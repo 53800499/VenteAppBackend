@@ -5,7 +5,7 @@ import { Permission } from '../enums/permission.enum';
 import { UserRole } from '../enums/user-role.enum';
 
 export class InsufficientPermissionException extends DomainException {
-  constructor(required: Permission[], missing: Permission[], role: UserRole) {
+  constructor(required: Permission[], missing: Permission[], role: string) {
     super(
       ErrorCode.RBAC_INSUFFICIENT_PERMISSION,
       'Permissions insuffisantes pour cette action.',
@@ -17,7 +17,7 @@ export class InsufficientPermissionException extends DomainException {
 }
 
 export class InsufficientRoleException extends DomainException {
-  constructor(required: UserRole[], current: UserRole) {
+  constructor(required: UserRole[], current: string) {
     super(
       ErrorCode.RBAC_INSUFFICIENT_ROLE,
       'Rôle insuffisant pour cette action.',

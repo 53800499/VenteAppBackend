@@ -5,7 +5,7 @@ export interface UserRow {
   shop_id: number;
   name: string;
   pin_hash: string;
-  role: UserRole;
+  role: string;
   is_active: boolean;
   avatar_path: string | null;
   last_login_at: number | null;
