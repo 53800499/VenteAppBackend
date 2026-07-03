@@ -13,6 +13,8 @@ export class ProductMapper {
       row.alert_threshold,
       row.price_buy,
       row.price_sell,
+      row.price_semi_wholesale ?? null,
+      row.price_wholesale ?? null,
       row.is_archived,
       row.created_at,
       row.updated_at,

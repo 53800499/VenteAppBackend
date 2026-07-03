@@ -9,6 +9,8 @@ export class Product {
     public readonly alertThreshold: number | null,
     public readonly priceBuy: number | null,
     public readonly priceSell: number,
+    public readonly priceSemiWholesale: number | null,
+    public readonly priceWholesale: number | null,
     public readonly isArchived: boolean,
     public readonly createdAt: number,
     public readonly updatedAt: number,

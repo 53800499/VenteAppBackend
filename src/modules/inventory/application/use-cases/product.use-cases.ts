@@ -58,6 +58,8 @@ export class ListProductsUseCase {
       alertThreshold: threshold,
       priceBuy: product.priceBuy,
       priceSell: product.priceSell,
+      priceSemiWholesale: product.priceSemiWholesale,
+      priceWholesale: product.priceWholesale,
       isArchived: product.isArchived,
       isLowStock: !product.isArchived && product.quantityInStock <= threshold,
     };
@@ -115,6 +117,8 @@ export class CreateProductUseCase {
       sku?: string;
       priceSell: number;
       priceBuy?: number;
+      priceSemiWholesale?: number | null;
+      priceWholesale?: number | null;
       initialQuantity: number;
       alertThreshold?: number;
     },
@@ -138,6 +142,8 @@ export class CreateProductUseCase {
       alert_threshold: alertThreshold,
       price_buy: input.priceBuy ?? null,
       price_sell: input.priceSell,
+      price_semi_wholesale: input.priceSemiWholesale ?? null,
+      price_wholesale: input.priceWholesale ?? null,
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -187,6 +193,8 @@ export class UpdateProductUseCase {
       sku?: string;
       priceSell?: number;
       priceBuy?: number | null;
+      priceSemiWholesale?: number | null;
+      priceWholesale?: number | null;
       alertThreshold?: number;
     },
   ) {
@@ -223,6 +231,10 @@ export class UpdateProductUseCase {
     if (input.sku !== undefined) patch.sku = input.sku?.trim() || null;
     if (input.priceSell != null) patch.price_sell = input.priceSell;
     if (input.priceBuy !== undefined) patch.price_buy = input.priceBuy;
+    if (input.priceSemiWholesale !== undefined) {
+      patch.price_semi_wholesale = input.priceSemiWholesale;
+    }
+    if (input.priceWholesale !== undefined) patch.price_wholesale = input.priceWholesale;
     if (input.alertThreshold != null) {
       patch.alert_threshold = this.validation.resolveAlertThreshold(input.alertThreshold, defaultThreshold);
     }

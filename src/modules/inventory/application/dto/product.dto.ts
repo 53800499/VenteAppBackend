@@ -62,7 +62,7 @@ export class CreateProductDto {
   @IsString()
   sku?: string;
 
-  @ApiProperty({ example: 15000, description: 'Prix de vente en FCFA (entier > 0)' })
+  @ApiProperty({ example: 15000, description: 'Prix catalogue détail FCFA' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -74,6 +74,20 @@ export class CreateProductDto {
   @IsInt()
   @Min(1)
   priceBuy?: number;
+
+  @ApiPropertyOptional({ example: 14000, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  priceSemiWholesale?: number | null;
+
+  @ApiPropertyOptional({ example: 13000, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  priceWholesale?: number | null;
 
   @ApiProperty({ example: 50, description: 'Quantité initiale (RG-INV-04)' })
   @Type(() => Number)
@@ -121,6 +135,20 @@ export class UpdateProductDto {
   @IsInt()
   @Min(1)
   priceBuy?: number | null;
+
+  @ApiPropertyOptional({ example: 14000, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  priceSemiWholesale?: number | null;
+
+  @ApiPropertyOptional({ example: 13000, nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  priceWholesale?: number | null;
 
   @ApiPropertyOptional({ example: 8 })
   @IsOptional()
@@ -185,8 +213,14 @@ export class ProductResponseDto {
   @ApiPropertyOptional({ example: 12000, nullable: true, description: 'Prix d\'achat FCFA' })
   priceBuy: number | null;
 
-  @ApiProperty({ example: 15000, description: 'Prix de vente FCFA' })
+  @ApiProperty({ example: 15000, description: 'Prix catalogue détail FCFA' })
   priceSell: number;
+
+  @ApiPropertyOptional({ example: 14000, nullable: true })
+  priceSemiWholesale: number | null;
+
+  @ApiPropertyOptional({ example: 13000, nullable: true })
+  priceWholesale: number | null;
 
   @ApiProperty({ example: false })
   isArchived: boolean;

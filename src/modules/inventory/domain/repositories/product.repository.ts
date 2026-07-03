@@ -20,6 +20,8 @@ export interface CreateProductData {
   alert_threshold: number;
   price_buy?: number | null;
   price_sell: number;
+  price_semi_wholesale?: number | null;
+  price_wholesale?: number | null;
   created_at: number;
   updated_at: number;
 }

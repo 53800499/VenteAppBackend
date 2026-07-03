@@ -8,6 +8,8 @@ export interface ProductRow {
   alert_threshold: number | null;
   price_buy: number | null;
   price_sell: number;
+  price_semi_wholesale?: number | null;
+  price_wholesale?: number | null;
   is_archived: boolean;
   created_at: number;
   updated_at: number;
