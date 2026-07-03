@@ -3,6 +3,7 @@ export class Category {
     public readonly id: number,
     public readonly shopId: number,
     public readonly name: string,
+    public readonly description: string | null,
     public readonly isActive: boolean,
     public readonly sortOrder: number,
     public readonly createdAt: number,

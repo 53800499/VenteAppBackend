@@ -26,6 +26,7 @@ export class ListCategoriesUseCase {
     return {
       id: category.id,
       name: category.name,
+      description: category.description,
       isActive: category.isActive,
       sortOrder: category.sortOrder,
     };
@@ -36,7 +37,7 @@ export class ListCategoriesUseCase {
 export class CreateCategoryUseCase {
   constructor(private readonly categories: CategoryRepository) {}
 
-  async execute(auth: AuthContext, input: { name: string; sortOrder?: number }) {
+  async execute(auth: AuthContext, input: { name: string; description?: string; sortOrder?: number }) {
     const name = input.name.trim();
     const exists = await this.categories.existsByNameInShop(auth.shopId, name);
     if (exists) {
@@ -47,6 +48,7 @@ export class CreateCategoryUseCase {
     const category = await this.categories.create({
       shop_id: auth.shopId,
       name,
+      description: input.description?.trim() || null,
       sort_order: input.sortOrder ?? 0,
       created_at: timestamp,
       updated_at: timestamp,
@@ -55,6 +57,7 @@ export class CreateCategoryUseCase {
     return {
       id: category.id,
       name: category.name,
+      description: category.description,
       isActive: category.isActive,
       sortOrder: category.sortOrder,
     };
@@ -68,7 +71,7 @@ export class UpdateCategoryUseCase {
   async execute(
     auth: AuthContext,
     categoryId: number,
-    input: { name?: string; isActive?: boolean; sortOrder?: number },
+    input: { name?: string; description?: string; isActive?: boolean; sortOrder?: number },
   ) {
     const existing = await this.categories.findByIdAndShop(categoryId, auth.shopId);
     if (!existing) {
@@ -85,6 +88,9 @@ export class UpdateCategoryUseCase {
 
     const patch: Record<string, unknown> = { updated_at: nowMs() };
     if (input.name != null) patch.name = input.name.trim();
+    if (input.description !== undefined) {
+      patch.description = input.description.trim() || null;
+    }
     if (input.isActive != null) patch.is_active = input.isActive;
     if (input.sortOrder != null) patch.sort_order = input.sortOrder;
 
@@ -92,6 +98,7 @@ export class UpdateCategoryUseCase {
     return {
       id: updated.id,
       name: updated.name,
+      description: updated.description,
       isActive: updated.isActive,
       sortOrder: updated.sortOrder,
     };

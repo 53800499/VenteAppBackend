@@ -18,7 +18,7 @@ const sampleProduct = new Product(
   12, 1, 1, 'Riz 25kg', null, 50, 5, 12000, 15000, false, 0, 0, 1,
 );
 
-const sampleCategory = new Category(1, 1, 'Boissons', true, 0, 0, 0);
+const sampleCategory = new Category(1, 1, 'Boissons', null, true, 0, 0, 0);
 
 function mockProductRepo(overrides: Partial<ProductRepository> = {}): ProductRepository {
   return {

@@ -7,6 +7,7 @@ export class CategoryMapper {
       row.id,
       row.shop_id,
       row.name,
+      row.description ?? null,
       row.is_active,
       row.sort_order,
       row.created_at,

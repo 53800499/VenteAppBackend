@@ -8,6 +8,11 @@ export class CreateCategoryDto {
   @MinLength(2)
   name: string;
 
+  @ApiPropertyOptional({ example: 'Sodas, jus et eaux minérales' })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
   @IsInt()
@@ -21,6 +26,11 @@ export class UpdateCategoryDto {
   @IsString()
   @MinLength(2)
   name?: string;
+
+  @ApiPropertyOptional({ example: 'Sodas, jus et eaux minérales' })
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
@@ -40,6 +50,9 @@ export class CategoryResponseDto {
 
   @ApiProperty({ example: 'Boissons' })
   name: string;
+
+  @ApiPropertyOptional({ example: 'Sodas, jus et eaux minérales' })
+  description?: string | null;
 
   @ApiProperty({ example: true })
   isActive: boolean;

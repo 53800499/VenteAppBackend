@@ -3,6 +3,7 @@ import { Category } from '../entities/category.entity';
 export interface CreateCategoryData {
   shop_id: number;
   name: string;
+  description?: string | null;
   sort_order?: number;
   created_at: number;
   updated_at: number;
