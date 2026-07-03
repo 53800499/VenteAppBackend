@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { setupSwagger } from './core/config/swagger.setup';
+import { setupCors } from './core/config/cors.setup';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 
 async function bootstrap() {
@@ -15,7 +16,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  app.enableCors();
+  setupCors(app);
 
   setupSwagger(app);
 

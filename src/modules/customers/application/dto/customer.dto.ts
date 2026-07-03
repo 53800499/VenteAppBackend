@@ -25,6 +25,20 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ example: 'Quartier Zongo, Cotonou' })
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Client visible dans les autres boutiques du patron (V3)',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isShared?: boolean;
 }
 
 export class UpdateCustomerDto {
@@ -43,6 +57,17 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isShared?: boolean;
 }
 
 export class ListCustomersQueryDto {
@@ -104,6 +129,9 @@ export class CustomerResponseDto {
   @ApiProperty()
   id: number;
 
+  @ApiProperty({ description: 'Boutique propriétaire du client' })
+  shopId: number;
+
   @ApiProperty()
   name: string;
 
@@ -111,10 +139,16 @@ export class CustomerResponseDto {
   phone: string | null;
 
   @ApiPropertyOptional()
+  address: string | null;
+
+  @ApiPropertyOptional()
   note: string | null;
 
   @ApiProperty()
   isArchived: boolean;
+
+  @ApiProperty({ default: false, description: 'Client partagé entre boutiques du patron' })
+  isShared: boolean;
 
   @ApiProperty({ description: 'Solde dû calculé en temps réel (RG-CLI-05)' })
   balanceDue: number;

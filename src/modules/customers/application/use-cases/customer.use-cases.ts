@@ -18,10 +18,13 @@ const CRITICAL_DEBT_MS = 30 * 24 * 60 * 60 * 1000;
 function toCustomerDto(customer: Customer) {
   return {
     id: customer.id,
+    shopId: customer.shopId,
     name: customer.name,
     phone: customer.phone,
+    address: customer.address,
     note: customer.note,
     isArchived: customer.isArchived,
+    isShared: customer.isShared,
     balanceDue: customer.balanceDue,
     openDebtsCount: customer.openDebtsCount,
     purchaseCount: customer.purchaseCount,
@@ -37,6 +40,7 @@ export class ListCustomersUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
+    private readonly shops: ShopRepository,
   ) {}
 
   async execute(
@@ -49,7 +53,12 @@ export class ListCustomersUseCase {
       limit?: number;
     },
   ) {
-    const rows = await this.customers.listByShop(auth.shopId, filters);
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const rows = await this.customers.listByShop(auth.shopId, {
+      ...filters,
+      ownerShopIds: ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+    });
     return rows.map((c) => ({
       ...toCustomerDto(c),
       phoneWarning: this.validation.phoneWarning(c.phone),
@@ -86,10 +95,18 @@ export class GetCustomerUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
+    private readonly shops: ShopRepository,
   ) {}
 
   async execute(auth: AuthContext, customerId: number) {
-    const customer = await this.customers.findByIdAndShop(customerId, auth.shopId);
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const customer = await this.customers.findByIdAndShop(
+      customerId,
+      auth.shopId,
+      true,
+      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+    );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
     const recentSales = await this.customers.listSales(customerId, auth.shopId, 10);
@@ -109,10 +126,20 @@ export class GetCustomerUseCase {
 
 @Injectable()
 export class ListCustomerSalesUseCase {
-  constructor(private readonly customers: CustomerRepository) {}
+  constructor(
+    private readonly customers: CustomerRepository,
+    private readonly shops: ShopRepository,
+  ) {}
 
   async execute(auth: AuthContext, customerId: number, limit = 50) {
-    const customer = await this.customers.findByIdAndShop(customerId, auth.shopId);
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const customer = await this.customers.findByIdAndShop(
+      customerId,
+      auth.shopId,
+      true,
+      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+    );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
     const sales = await this.customers.listSales(customerId, auth.shopId, limit);
@@ -134,7 +161,16 @@ export class CreateCustomerUseCase {
     private readonly logAudit: LogAuditUseCase,
   ) {}
 
-  async execute(auth: AuthContext, input: { name: string; phone?: string; note?: string }) {
+  async execute(
+    auth: AuthContext,
+    input: {
+      name: string;
+      phone?: string;
+      note?: string;
+      address?: string;
+      isShared?: boolean;
+    },
+  ) {
     const name = this.validation.assertName(input.name);
     const timestamp = nowMs();
 
@@ -142,7 +178,9 @@ export class CreateCustomerUseCase {
       shop_id: auth.shopId,
       name,
       phone: input.phone?.trim() || null,
+      address: input.address?.trim() || null,
       note: input.note?.trim() || null,
+      is_shared: input.isShared ?? false,
       created_at: timestamp,
       updated_at: timestamp,
     });
@@ -154,7 +192,12 @@ export class CreateCustomerUseCase {
       module: AuditModule.CUSTOMERS,
       entityId: customer.id,
       entityTable: 'customers',
-      newValue: { name: customer.name, phone: customer.phone },
+      newValue: {
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address,
+        isShared: customer.isShared,
+      },
       reason: 'Client créé',
     });
 
@@ -176,7 +219,13 @@ export class UpdateCustomerUseCase {
   async execute(
     auth: AuthContext,
     customerId: number,
-    input: { name?: string; phone?: string; note?: string },
+    input: {
+      name?: string;
+      phone?: string;
+      note?: string;
+      address?: string;
+      isShared?: boolean;
+    },
   ) {
     const existing = await this.customers.findByIdAndShop(customerId, auth.shopId);
     if (!existing) throw new CustomerNotFoundException(customerId);
@@ -185,7 +234,9 @@ export class UpdateCustomerUseCase {
     const patch: Record<string, unknown> = { updated_at: nowMs() };
     if (input.name != null) patch.name = this.validation.assertName(input.name);
     if (input.phone !== undefined) patch.phone = input.phone.trim() || null;
+    if (input.address !== undefined) patch.address = input.address.trim() || null;
     if (input.note !== undefined) patch.note = input.note.trim() || null;
+    if (input.isShared !== undefined) patch.is_shared = input.isShared;
 
     const updated = await this.customers.updateInShop(customerId, auth.shopId, patch);
 
@@ -196,8 +247,20 @@ export class UpdateCustomerUseCase {
       module: AuditModule.CUSTOMERS,
       entityId: customerId,
       entityTable: 'customers',
-      oldValue: { name: existing.name, phone: existing.phone, note: existing.note },
-      newValue: { name: updated.name, phone: updated.phone, note: updated.note },
+      oldValue: {
+        name: existing.name,
+        phone: existing.phone,
+        address: existing.address,
+        note: existing.note,
+        isShared: existing.isShared,
+      },
+      newValue: {
+        name: updated.name,
+        phone: updated.phone,
+        address: updated.address,
+        note: updated.note,
+        isShared: updated.isShared,
+      },
       reason: 'Fiche client mise à jour',
     });
 

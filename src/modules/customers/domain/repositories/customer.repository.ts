@@ -8,13 +8,17 @@ export interface CustomerListFilters {
   hasDebt?: boolean;
   sort?: CustomerSortField;
   limit?: number;
+  /** Boutiques du même patron — pour inclure les clients partagés (V3). */
+  ownerShopIds?: number[];
 }
 
 export interface CreateCustomerData {
   shop_id: number;
   name: string;
   phone?: string | null;
+  address?: string | null;
   note?: string | null;
+  is_shared?: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -29,7 +33,12 @@ export interface DebtorSummaryRow {
 }
 
 export abstract class CustomerRepository {
-  abstract findByIdAndShop(id: number, shopId: number, includeArchived?: boolean): Promise<Customer | null>;
+  abstract findByIdAndShop(
+    id: number,
+    shopId: number,
+    includeArchived?: boolean,
+    ownerShopIds?: number[],
+  ): Promise<Customer | null>;
   abstract listByShop(shopId: number, filters?: CustomerListFilters): Promise<Customer[]>;
   abstract listDebtors(shopId: number): Promise<DebtorSummaryRow[]>;
   abstract create(data: CreateCustomerData): Promise<Customer>;

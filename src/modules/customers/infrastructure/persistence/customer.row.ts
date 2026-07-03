@@ -3,8 +3,10 @@ export interface CustomerRow {
   shop_id: number;
   name: string;
   phone: string | null;
+  address: string | null;
   note: string | null;
   is_archived: boolean;
+  is_shared: boolean;
   created_at: number;
   updated_at: number;
 }

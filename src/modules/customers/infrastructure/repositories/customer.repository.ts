@@ -16,11 +16,30 @@ export class SupabaseCustomerRepository extends CustomerRepository {
     super();
   }
 
-  async findByIdAndShop(id: number, shopId: number, includeArchived = true): Promise<Customer | null> {
-    let query = this.supabase.db.from('customers').select('*').eq('id', id).eq('shop_id', shopId);
-    if (!includeArchived) query = query.eq('is_archived', false);
+  async findByIdAndShop(
+    id: number,
+    shopId: number,
+    includeArchived = true,
+    ownerShopIds?: number[],
+  ): Promise<Customer | null> {
+    const direct = await this.fetchCustomerRow(id, shopId, includeArchived);
+    if (direct) {
+      const stats = await this.fetchStatsForCustomers(shopId, [id]);
+      return CustomerMapper.toDomain(direct, stats.get(id));
+    }
 
-    const { data, error } = await query.maybeSingle();
+    const siblingIds = (ownerShopIds ?? []).filter((shop) => shop !== shopId);
+    if (siblingIds.length === 0) return null;
+
+    let sharedQuery = this.supabase.db
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .eq('is_shared', true)
+      .in('shop_id', siblingIds);
+    if (!includeArchived) sharedQuery = sharedQuery.eq('is_archived', false);
+
+    const { data, error } = await sharedQuery.maybeSingle();
     if (error) throw new BadRequestException(error.message);
     if (!data) return null;
 
@@ -28,8 +47,31 @@ export class SupabaseCustomerRepository extends CustomerRepository {
     return CustomerMapper.toDomain(data as CustomerRow, stats.get(id));
   }
 
+  private async fetchCustomerRow(
+    id: number,
+    shopId: number,
+    includeArchived: boolean,
+  ): Promise<CustomerRow | null> {
+    let query = this.supabase.db.from('customers').select('*').eq('id', id).eq('shop_id', shopId);
+    if (!includeArchived) query = query.eq('is_archived', false);
+
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+    return data as CustomerRow | null;
+  }
+
   async listByShop(shopId: number, filters?: CustomerListFilters): Promise<Customer[]> {
-    let query = this.supabase.db.from('customers').select('*').eq('shop_id', shopId);
+    const ownerShopIds = filters?.ownerShopIds ?? [shopId];
+    const siblingIds = ownerShopIds.filter((id) => id !== shopId);
+
+    let query = this.supabase.db.from('customers').select('*');
+
+    if (siblingIds.length > 0) {
+      const siblings = siblingIds.join(',');
+      query = query.or(`shop_id.eq.${shopId},and(is_shared.eq.true,shop_id.in.(${siblings}))`);
+    } else {
+      query = query.eq('shop_id', shopId);
+    }
 
     if (!filters?.includeArchived) query = query.eq('is_archived', false);
     if (filters?.search) {
