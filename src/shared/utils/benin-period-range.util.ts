@@ -36,7 +36,7 @@ export function beninMonthStartMs(nowMs: number = Date.now()): number {
   return beninMonthStart(nowMs);
 }
 
-function formatBeninDate(ms: number): string {
+export function formatBeninDate(ms: number): string {
   const local = new Date(ms + BENIN_OFFSET_MS);
   const y = local.getUTCFullYear();
   const m = String(local.getUTCMonth() + 1).padStart(2, '0');
