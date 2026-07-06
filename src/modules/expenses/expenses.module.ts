@@ -3,6 +3,7 @@ import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuthModule } from '../auth/auth.module';
 import { ReportsModule } from '../reports/reports.module';
+import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
 import {
   CreateExpenseCategoryUseCase,
@@ -30,6 +31,7 @@ import { ExpensesController } from './presentation/controllers/expenses.controll
     CoreModule,
     AuthorizationGuardsModule,
     ReportsModule,
+    ShopsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],
