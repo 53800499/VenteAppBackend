@@ -13,6 +13,7 @@ export class ShopMapper {
       row.is_active,
       row.is_default,
       row.created_at,
+      row.parent_shop_id ?? null,
     );
   }
 

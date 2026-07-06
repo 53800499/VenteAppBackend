@@ -8,6 +8,7 @@ export class Shop {
     public readonly isActive: boolean,
     public readonly isDefault: boolean,
     public readonly createdAt: number,
+    public readonly parentShopId: number | null = null,
   ) {}
 }
 

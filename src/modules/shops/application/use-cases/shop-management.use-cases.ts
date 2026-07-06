@@ -9,23 +9,29 @@ import { TenantDatabaseService } from '../../../tenants/tenant-database.service'
 import { SettingsRepository } from '../../domain/repositories/settings.repository';
 import { ShopRepository } from '../../domain/repositories/shop.repository';
 import { ShopOwnershipService } from '../../domain/services/shop-ownership.service';
+import { ShopHierarchyService } from '../../domain/services/shop-hierarchy.service';
 import { LastActiveShopException, ShopInactiveException } from '../../exceptions/shop.exceptions';
 import { CreateShopDto, UpdateShopDto } from '../dto/shop-management.dto';
 import { Shop } from '../../domain/entities/shop.entity';
 
 @Injectable()
 export class ListOwnedShopsUseCase {
-  constructor(private readonly shops: ShopRepository) {}
+  constructor(
+    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
+  ) {}
 
   async execute(auth: AuthContext) {
     if (auth.role !== UserRole.OWNER) {
       throw new ForbiddenException('Réservé au patron.');
     }
 
+    const rootShopId = await this.hierarchy.resolveRootShopId(auth.shopId);
     const rows = await this.shops.findByOwnerUserId(auth.userId);
+    const filtered = this.hierarchy.filterShopsInTree(rows, rootShopId);
     return {
       activeShopId: auth.shopId,
-      shops: rows.map((shop) => this.toItem(shop, auth.shopId)),
+      shops: filtered.map((shop) => this.toItem(shop, auth.shopId)),
     };
   }
 
@@ -69,6 +75,7 @@ export class CreateShopUseCase {
     private readonly shops: ShopRepository,
     private readonly settings: SettingsRepository,
     private readonly ownership: ShopOwnershipService,
+    private readonly hierarchy: ShopHierarchyService,
     private readonly logAudit: LogAuditUseCase,
     private readonly configService: ConfigService,
     private readonly tenantDb: TenantDatabaseService,
@@ -77,6 +84,7 @@ export class CreateShopUseCase {
   async execute(auth: AuthContext, dto: CreateShopDto) {
     await this.ownership.assertOwnerAccess(auth.userId, auth.role, auth.shopId);
 
+    const rootShopId = await this.hierarchy.resolveRootShopId(auth.shopId);
     const timestamp = nowMs();
     const shop = await this.shops.create({
       name: dto.name.trim(),
@@ -85,6 +93,7 @@ export class CreateShopUseCase {
       owner_user_id: auth.userId,
       is_active: true,
       is_default: false,
+      parent_shop_id: rootShopId,
       created_at: timestamp,
     });
 

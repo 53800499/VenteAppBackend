@@ -7,6 +7,7 @@ import {
   resolveReportPeriod,
 } from '../../../../shared/utils/benin-period-range.util';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
+import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import { ReportReadRepository } from '../../domain/repositories/report-read.repository';
 import { ReportAggregationService } from '../../domain/services/report-aggregation.service';
 
@@ -18,6 +19,7 @@ export class GetReportUseCase {
     private readonly reports: ReportReadRepository,
     private readonly aggregation: ReportAggregationService,
     private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(
@@ -112,11 +114,10 @@ export class GetReportUseCase {
       throw new ForbiddenException('Permission shops:consolidated_read requise.');
     }
 
-    const owned = await this.shops.findByOwnerUserId(auth.userId);
-    const activeIds = owned.filter((s) => s.isActive).map((s) => s.id);
-    if (activeIds.length === 0) {
-      return [auth.shopId];
-    }
+    const activeIds = await this.hierarchy.resolveActiveTreeShopIds(
+      auth.shopId,
+      auth.userId,
+    );
     return activeIds;
   }
 }

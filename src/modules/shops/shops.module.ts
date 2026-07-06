@@ -17,6 +17,7 @@ import {
 import { SettingsRepository } from './domain/repositories/settings.repository';
 import { ShopRepository } from './domain/repositories/shop.repository';
 import { ShopOwnershipService } from './domain/services/shop-ownership.service';
+import { ShopHierarchyService } from './domain/services/shop-hierarchy.service';
 import { SupabaseSettingsRepository } from './infrastructure/repositories/settings.repository';
 import { SupabaseShopRepository } from './infrastructure/repositories/shop.repository';
 import { ShopsController } from './presentation/controllers/shops.controller';
@@ -36,6 +37,7 @@ import { ShopsController } from './presentation/controllers/shops.controller';
     { provide: ShopRepository, useClass: SupabaseShopRepository },
     { provide: SettingsRepository, useClass: SupabaseSettingsRepository },
     ShopOwnershipService,
+    ShopHierarchyService,
     ListOwnedShopsUseCase,
     GetOwnedShopUseCase,
     CreateShopUseCase,
@@ -43,6 +45,6 @@ import { ShopsController } from './presentation/controllers/shops.controller';
     DeactivateShopUseCase,
     SetDefaultShopUseCase,
   ],
-  exports: [ShopRepository, SettingsRepository, ShopOwnershipService],
+  exports: [ShopRepository, SettingsRepository, ShopOwnershipService, ShopHierarchyService],
 })
 export class ShopsModule {}

@@ -7,6 +7,7 @@ export interface ShopRow {
   is_active: boolean;
   is_default: boolean;
   created_at: number;
+  parent_shop_id?: number | null;
 }
 
 export interface SettingsRow {

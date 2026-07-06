@@ -3,7 +3,7 @@ import { AuditAction, AuditModule } from '../../../../shared/enums/audit.enum';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { nowMs } from '../../../../shared/utils/time.util';
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
-import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
+import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import { Customer } from '../../domain/entities/customer.entity';
 import { CustomerRepository } from '../../domain/repositories/customer.repository';
 import { CustomerValidationService } from '../../domain/services/customer-validation.service';
@@ -40,7 +40,7 @@ export class ListCustomersUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
-    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(
@@ -53,11 +53,13 @@ export class ListCustomersUseCase {
       limit?: number;
     },
   ) {
-    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
-    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
+      auth.shopId,
+      auth.userId,
+    );
     const rows = await this.customers.listByShop(auth.shopId, {
       ...filters,
-      ownerShopIds: ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+      ownerShopIds,
     });
     return rows.map((c) => ({
       ...toCustomerDto(c),
@@ -95,17 +97,19 @@ export class GetCustomerUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
-    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(auth: AuthContext, customerId: number) {
-    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
-    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
+      auth.shopId,
+      auth.userId,
+    );
     const customer = await this.customers.findByIdAndShop(
       customerId,
       auth.shopId,
       true,
-      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+      ownerShopIds,
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
@@ -128,17 +132,19 @@ export class GetCustomerUseCase {
 export class ListCustomerSalesUseCase {
   constructor(
     private readonly customers: CustomerRepository,
-    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(auth: AuthContext, customerId: number, limit = 50) {
-    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
-    const ownerShopIds = ownedShops.map((shop) => shop.id);
+    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
+      auth.shopId,
+      auth.userId,
+    );
     const customer = await this.customers.findByIdAndShop(
       customerId,
       auth.shopId,
       true,
-      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
+      ownerShopIds,
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 

@@ -46,6 +46,7 @@ export class SetupOwnerUseCase {
         phone: command.shopPhone ?? null,
         is_active: true,
         is_default: true,
+        parent_shop_id: null,
         created_at: timestamp,
       });
 
