@@ -3,6 +3,7 @@ import { AuditAction, AuditModule } from '../../../../shared/enums/audit.enum';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { nowMs } from '../../../../shared/utils/time.util';
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
+import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
 import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import { Customer } from '../../domain/entities/customer.entity';
 import { CustomerRepository } from '../../domain/repositories/customer.repository';
