@@ -4,6 +4,7 @@ import { AuthorizationGuardsModule } from '../../shared/authorization-guards.mod
 import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { CashSessionsModule } from '../cash-sessions/cash-sessions.module';
 import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
 import {
@@ -32,6 +33,7 @@ import { SalesController } from './presentation/controllers/sales.controller';
     AuditPersistenceModule,
     ShopsModule,
     InventoryModule,
+    CashSessionsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],

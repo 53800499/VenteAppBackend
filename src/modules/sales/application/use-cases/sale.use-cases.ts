@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { AuditAction, AuditModule } from '../../../../shared/enums/audit.enum';
 import { UserRole } from '../../../../shared/enums/user-role.enum';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
@@ -21,6 +21,7 @@ import {
   SaleNotFoundException,
   SaleOwnerOnlyCancelException,
 } from '../../exceptions/sales.exceptions';
+import { CashSessionRepository } from '../../../cash-sessions/domain/repositories/cash-session.repository';
 
 function toPaymentDraft(payment: PaymentInput): PaymentDraft {
   return {
@@ -71,7 +72,17 @@ export class CreateStandardSaleUseCase {
     private readonly validation: SaleValidationService,
     private readonly receipts: ReceiptNumberService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly cashSessions: CashSessionRepository,
   ) {}
+
+  private async assertOpenCashSession(shopId: number): Promise<void> {
+    const open = await this.cashSessions.findOpenByShop(shopId);
+    if (!open) {
+      throw new BadRequestException(
+        'Ouvrez la caisse avant d\'enregistrer une vente.',
+      );
+    }
+  }
 
   async execute(
     auth: AuthContext,
@@ -83,6 +94,8 @@ export class CreateStandardSaleUseCase {
       note?: string;
     },
   ) {
+    await this.assertOpenCashSession(auth.shopId);
+
     const lines: SaleLineDraft[] = input.items.map((item) => ({
       productId: item.productId,
       quantity: item.quantity,
@@ -229,12 +242,20 @@ export class CreateQuickSaleUseCase {
     private readonly validation: SaleValidationService,
     private readonly receipts: ReceiptNumberService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly cashSessions: CashSessionRepository,
   ) {}
 
   async execute(
     auth: AuthContext,
     input: { totalAmount: number; payment: PaymentInput; note?: string },
   ) {
+    const open = await this.cashSessions.findOpenByShop(auth.shopId);
+    if (!open) {
+      throw new BadRequestException(
+        'Ouvrez la caisse avant d\'enregistrer une vente.',
+      );
+    }
+
     const payment = toPaymentDraft(input.payment);
     const totals = this.validation.computeQuickTotals(input.totalAmount, payment);
     const timestamp = nowMs();

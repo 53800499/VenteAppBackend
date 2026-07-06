@@ -62,6 +62,12 @@ export enum Permission {
   EXPENSES_ARCHIVE = 'expenses:archive',
   EXPENSES_CATEGORIES = 'expenses:categories',
 
+  // Gestion de caisse
+  CASH_SESSIONS_READ = 'cash_sessions:read',
+  CASH_SESSIONS_OPEN = 'cash_sessions:open',
+  CASH_SESSIONS_CLOSE = 'cash_sessions:close',
+  CASH_SESSIONS_ADJUST = 'cash_sessions:adjust',
+
   // Boutiques (multi-boutiques V3)
   SHOPS_READ = 'shops:read',
   SHOPS_CREATE = 'shops:create',
