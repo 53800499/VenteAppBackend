@@ -24,5 +24,6 @@ import { ReportsController } from './presentation/controllers/reports.controller
     ReportAggregationService,
     GetReportUseCase,
   ],
+  exports: [ReportReadRepository, ReportAggregationService],
 })
 export class ReportsModule {}

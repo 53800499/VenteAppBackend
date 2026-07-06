@@ -8,6 +8,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SalesAnalysisModule } from './modules/sales-analysis/sales-analysis.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -20,7 +21,7 @@ import { ShopsModule } from './modules/shops/shops.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
-  imports: [CoreModule, TenantsModule, AuthModule, ShopsModule, UsersModule, RbacModule, DashboardModule, InventoryModule, SalesModule, PaymentsModule, CustomersModule, DebtsModule, ReportsModule, SalesAnalysisModule, NotificationsModule, SettingsModule, AuditModule],
+  imports: [CoreModule, TenantsModule, AuthModule, ShopsModule, UsersModule, RbacModule, DashboardModule, InventoryModule, SalesModule, PaymentsModule, CustomersModule, DebtsModule, ExpensesModule, ReportsModule, SalesAnalysisModule, NotificationsModule, SettingsModule, AuditModule],
   controllers: [AppController],
   providers: [AppService],
 })

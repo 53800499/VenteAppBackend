@@ -55,6 +55,13 @@ export enum Permission {
   REPORTS_READ = 'reports:read',
   REPORTS_FINANCIAL = 'reports:financial',
 
+  // Dépenses
+  EXPENSES_READ = 'expenses:read',
+  EXPENSES_CREATE = 'expenses:create',
+  EXPENSES_UPDATE = 'expenses:update',
+  EXPENSES_ARCHIVE = 'expenses:archive',
+  EXPENSES_CATEGORIES = 'expenses:categories',
+
   // Boutiques (multi-boutiques V3)
   SHOPS_READ = 'shops:read',
   SHOPS_CREATE = 'shops:create',
