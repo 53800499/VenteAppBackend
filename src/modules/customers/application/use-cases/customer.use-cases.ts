@@ -41,6 +41,7 @@ export class ListCustomersUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
+    private readonly shops: ShopRepository,
     private readonly hierarchy: ShopHierarchyService,
   ) {}
 
@@ -54,13 +55,11 @@ export class ListCustomersUseCase {
       limit?: number;
     },
   ) {
-    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
-      auth.shopId,
-      auth.userId,
-    );
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = this.hierarchy.groupShopIds(ownedShops, auth.shopId);
     const rows = await this.customers.listByShop(auth.shopId, {
       ...filters,
-      ownerShopIds,
+      ownerShopIds: ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
     });
     return rows.map((c) => ({
       ...toCustomerDto(c),
@@ -98,19 +97,18 @@ export class GetCustomerUseCase {
   constructor(
     private readonly customers: CustomerRepository,
     private readonly validation: CustomerValidationService,
+    private readonly shops: ShopRepository,
     private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(auth: AuthContext, customerId: number) {
-    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
-      auth.shopId,
-      auth.userId,
-    );
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = this.hierarchy.groupShopIds(ownedShops, auth.shopId);
     const customer = await this.customers.findByIdAndShop(
       customerId,
       auth.shopId,
       true,
-      ownerShopIds,
+      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
@@ -133,19 +131,18 @@ export class GetCustomerUseCase {
 export class ListCustomerSalesUseCase {
   constructor(
     private readonly customers: CustomerRepository,
+    private readonly shops: ShopRepository,
     private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(auth: AuthContext, customerId: number, limit = 50) {
-    const ownerShopIds = await this.hierarchy.resolveActiveTreeShopIds(
-      auth.shopId,
-      auth.userId,
-    );
+    const ownedShops = await this.shops.findByOwnerUserId(auth.userId);
+    const ownerShopIds = this.hierarchy.groupShopIds(ownedShops, auth.shopId);
     const customer = await this.customers.findByIdAndShop(
       customerId,
       auth.shopId,
       true,
-      ownerShopIds,
+      ownerShopIds.length > 0 ? ownerShopIds : [auth.shopId],
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 

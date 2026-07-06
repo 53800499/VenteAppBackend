@@ -114,10 +114,7 @@ export class GetReportUseCase {
       throw new ForbiddenException('Permission shops:consolidated_read requise.');
     }
 
-    const activeIds = await this.hierarchy.resolveActiveTreeShopIds(
-      auth.shopId,
-      auth.userId,
-    );
-    return activeIds;
+    const owned = await this.shops.findByOwnerUserId(auth.userId);
+    return this.hierarchy.groupShopIds(owned, auth.shopId);
   }
 }

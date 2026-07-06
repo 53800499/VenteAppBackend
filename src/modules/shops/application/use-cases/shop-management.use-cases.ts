@@ -26,12 +26,11 @@ export class ListOwnedShopsUseCase {
       throw new ForbiddenException('Réservé au patron.');
     }
 
-    const rootShopId = await this.hierarchy.resolveRootShopId(auth.shopId);
     const rows = await this.shops.findByOwnerUserId(auth.userId);
-    const filtered = this.hierarchy.filterShopsInTree(rows, rootShopId);
+    const group = this.hierarchy.shopsInGroup(rows, auth.shopId);
     return {
       activeShopId: auth.shopId,
-      shops: filtered.map((shop) => this.toItem(shop, auth.shopId)),
+      shops: group.map((shop) => this.toItem(shop, auth.shopId)),
     };
   }
 
@@ -44,6 +43,7 @@ export class ListOwnedShopsUseCase {
       isActive: shop.isActive,
       isDefault: shop.isDefault,
       isCurrent: shop.id === activeShopId,
+      parentShopId: shop.parentShopId,
     };
   }
 }
@@ -84,7 +84,9 @@ export class CreateShopUseCase {
   async execute(auth: AuthContext, dto: CreateShopDto) {
     await this.ownership.assertOwnerAccess(auth.userId, auth.role, auth.shopId);
 
-    const rootShopId = await this.hierarchy.resolveRootShopId(auth.shopId);
+    const owned = await this.shops.findByOwnerUserId(auth.userId);
+    const rootShopId = this.hierarchy.resolveRootShopId(owned, auth.shopId);
+
     const timestamp = nowMs();
     const shop = await this.shops.create({
       name: dto.name.trim(),
@@ -126,6 +128,7 @@ export class CreateShopUseCase {
       phone: shop.phone,
       isActive: shop.isActive,
       isDefault: shop.isDefault,
+      parentShopId: shop.parentShopId,
       createdAt: shop.createdAt,
     };
   }
@@ -187,6 +190,7 @@ export class DeactivateShopUseCase {
   constructor(
     private readonly shops: ShopRepository,
     private readonly ownership: ShopOwnershipService,
+    private readonly hierarchy: ShopHierarchyService,
     private readonly logAudit: LogAuditUseCase,
   ) {}
 
@@ -197,8 +201,11 @@ export class DeactivateShopUseCase {
       return { id: shopId, isActive: false };
     }
 
-    const activeCount = await this.shops.countActiveByOwner(auth.userId);
-    if (activeCount <= 1) {
+    const owned = await this.shops.findByOwnerUserId(auth.userId);
+    const activeInGroup = this.hierarchy
+      .shopsInGroup(owned, auth.shopId)
+      .filter((shop) => shop.isActive).length;
+    if (activeInGroup <= 1) {
       throw new LastActiveShopException();
     }
 

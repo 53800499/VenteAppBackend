@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { UserRole } from '../../../../shared/enums/user-role.enum';
 import { Shop } from '../entities/shop.entity';
 import { ShopRepository } from '../repositories/shop.repository';
+import { ShopHierarchyService } from './shop-hierarchy.service';
 import { ShopInactiveException } from '../../exceptions/shop.exceptions';
 
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
@@ -11,6 +12,7 @@ export class ShopOwnershipService {
   constructor(
     private readonly shops: ShopRepository,
     private readonly users: UserRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async assertOwnerAccess(userId: number, role: string, shopId: number): Promise<Shop> {
@@ -48,7 +50,9 @@ export class ShopOwnershipService {
     const target = requestedShopId ?? sessionDefaultShopId;
 
     if (role === UserRole.OWNER) {
-      const shop = await this.shops.findOwnedById(target, userId);
+      const owned = await this.shops.findByOwnerUserId(userId);
+      const inGroup = this.hierarchy.shopsInGroup(owned, sessionDefaultShopId);
+      const shop = inGroup.find((candidate) => candidate.id === target);
       if (!shop) {
         throw new NotFoundException('Boutique introuvable ou accès refusé.');
       }

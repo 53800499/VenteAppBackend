@@ -6,7 +6,6 @@ import { AuthContext } from '../../../../shared/interfaces/auth-context.interfac
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
 import { SettingsRepository } from '../../../shops/domain/repositories/settings.repository';
 import { ShopOwnershipService } from '../../../shops/domain/services/shop-ownership.service';
-import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import { ShopInactiveException } from '../../../shops/exceptions/shop.exceptions';
 import { UserSessionRepository } from '../../domain/repositories/user-session.repository';
 
@@ -14,7 +13,6 @@ import { UserSessionRepository } from '../../domain/repositories/user-session.re
 export class SwitchShopUseCase {
   constructor(
     private readonly ownership: ShopOwnershipService,
-    private readonly hierarchy: ShopHierarchyService,
     private readonly settings: SettingsRepository,
     private readonly sessions: UserSessionRepository,
     private readonly logAudit: LogAuditUseCase,
@@ -26,10 +24,6 @@ export class SwitchShopUseCase {
     }
 
     const shop = await this.ownership.assertOwnerAccess(auth.userId, auth.role, shopId);
-    const rootShopId = await this.hierarchy.resolveRootShopId(auth.shopId);
-    if (!this.hierarchy.belongsToTree(shop, rootShopId)) {
-      throw new NotFoundException('Boutique hors de votre réseau de boutiques.');
-    }
     if (!shop.isActive) {
       throw new ShopInactiveException();
     }
