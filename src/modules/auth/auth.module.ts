@@ -85,6 +85,6 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     SwitchShopUseCase,
     SessionGuard,
   ],
-  exports: [UserSessionRepository, AuthTokenService, SessionGuard],
+  exports: [UserSessionRepository, AuthTokenService, SessionGuard, TouchSessionUseCase],
 })
 export class AuthModule {}
