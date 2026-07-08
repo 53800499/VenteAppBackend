@@ -40,6 +40,6 @@ import { DebtsController } from './presentation/controllers/debts.controller';
     RecordDebtPaymentUseCase,
     ForgiveDebtUseCase,
   ],
-  exports: [DebtRepository],
+  exports: [DebtRepository, DebtValidationService],
 })
 export class DebtsModule {}

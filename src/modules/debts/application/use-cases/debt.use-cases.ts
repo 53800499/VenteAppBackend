@@ -20,7 +20,7 @@ function lastPaymentAt(debt: Debt): number | null {
   return debt.payments[debt.payments.length - 1]!.createdAt;
 }
 
-function toDebtResponse(debt: Debt, validation: DebtValidationService, now = nowMs()) {
+export function toDebtResponse(debt: Debt, validation: DebtValidationService, now = nowMs()) {
   const lastPay = lastPaymentAt(debt);
   return {
     id: debt.id,

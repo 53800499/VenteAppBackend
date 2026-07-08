@@ -5,6 +5,7 @@ import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
 import { ShopsModule } from '../shops/shops.module';
 import { UsersModule } from '../users/users.module';
+import { DebtsModule } from '../debts/debts.module';
 import {
   ArchiveCustomerUseCase,
   CreateCustomerUseCase,
@@ -26,6 +27,7 @@ import { CustomersController } from './presentation/controllers/customers.contro
     AuthorizationGuardsModule,
     AuditPersistenceModule,
     ShopsModule,
+    DebtsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],

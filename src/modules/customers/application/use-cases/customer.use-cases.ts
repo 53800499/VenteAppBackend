@@ -8,6 +8,9 @@ import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierar
 import { Customer } from '../../domain/entities/customer.entity';
 import { CustomerRepository } from '../../domain/repositories/customer.repository';
 import { CustomerValidationService } from '../../domain/services/customer-validation.service';
+import { DebtRepository } from '../../../debts/domain/repositories/debt.repository';
+import { DebtValidationService } from '../../../debts/domain/services/debt-validation.service';
+import { toDebtResponse } from '../../../debts/application/use-cases/debt.use-cases';
 import {
   CustomerAlreadyArchivedException,
   CustomerDebtReminderNoPhoneException,
@@ -99,6 +102,8 @@ export class GetCustomerUseCase {
     private readonly validation: CustomerValidationService,
     private readonly shops: ShopRepository,
     private readonly hierarchy: ShopHierarchyService,
+    private readonly debts: DebtRepository,
+    private readonly debtValidation: DebtValidationService,
   ) {}
 
   async execute(auth: AuthContext, customerId: number) {
@@ -112,17 +117,23 @@ export class GetCustomerUseCase {
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
-    const recentSales = await this.customers.listSales(customerId, auth.shopId, 10);
+    const sales = await this.customers.listSales(customerId, auth.shopId, 50);
+    const customerDebts = await this.debts.listByShop(auth.shopId, { customerId });
+    const now = nowMs();
+
     return {
-      ...toCustomerDto(customer),
-      phoneWarning: this.validation.phoneWarning(customer.phone),
-      recentSales: recentSales.map((s) => ({
+      customer: {
+        ...toCustomerDto(customer),
+        phoneWarning: this.validation.phoneWarning(customer.phone),
+      },
+      sales: sales.map((s) => ({
         id: s.id,
         receiptNumber: s.receiptNumber,
         totalAmount: s.totalAmount,
         status: s.status,
         createdAt: s.createdAt,
       })),
+      debts: customerDebts.map((d) => toDebtResponse(d, this.debtValidation, now)),
     };
   }
 }
