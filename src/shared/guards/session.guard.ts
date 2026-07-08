@@ -11,6 +11,7 @@ import { ShopOwnershipService } from '../../modules/shops/domain/services/shop-o
 import { TenantContextService } from '../../modules/tenants/tenant-context.service';
 import { TenantDatabaseService } from '../../modules/tenants/tenant-database.service';
 import { UserRepository } from '../../modules/users/domain/repositories/user.repository';
+import { TouchSessionUseCase } from '../../modules/auth/application/use-cases/touch-session.use-case';
 import { AuthContext, AuthenticatedRequest } from '../interfaces/auth-context.interface';
 import {
   extractActiveShopIdHeader,
@@ -29,6 +30,7 @@ export class SessionGuard implements CanActivate {
     private readonly tenantContext: TenantContextService,
     private readonly tenantDb: TenantDatabaseService,
     private readonly authTokenService: AuthTokenService,
+    private readonly touchSession: TouchSessionUseCase,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -77,6 +79,13 @@ export class SessionGuard implements CanActivate {
       }),
       sessionId: session.id,
     };
+
+    // Prolonger la session en arrière-plan si le dernier contact date de plus de 1 minute
+    if (timestamp - session.lastSeenAt > 60000) {
+      this.touchSession.execute(session.id, activeShopId).catch(() => {
+        // Ignorer l'échec (ne pas bloquer la requête)
+      });
+    }
 
     return true;
   }

@@ -24,9 +24,6 @@ export class RefreshTokensUseCase {
     const session = await this.authTokenService.validateRefreshToken(refreshToken);
     const timestamp = nowMs();
 
-    if (!session.isSessionActive(timestamp)) {
-      throw new NotFoundException('Session verrouillée par inactivité — reconnectez-vous avec le PIN.');
-    }
 
     const user =
       (await this.users.findByIdAndShop(session.userId, session.shopId)) ??
