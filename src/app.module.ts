@@ -21,8 +21,10 @@ import { RbacModule } from './modules/rbac/rbac.module';
 import { ShopsModule } from './modules/shops/shops.module';
 import { UsersModule } from './modules/users/users.module';
 
+import { CalculatorsModule } from './modules/calculators/calculators.module';
+
 @Module({
-  imports: [CoreModule, TenantsModule, AuthModule, ShopsModule, UsersModule, RbacModule, DashboardModule, InventoryModule, SalesModule, PaymentsModule, CustomersModule, DebtsModule, ExpensesModule, CashSessionsModule, ReportsModule, SalesAnalysisModule, NotificationsModule, SettingsModule, AuditModule],
+  imports: [CoreModule, TenantsModule, AuthModule, ShopsModule, UsersModule, RbacModule, DashboardModule, InventoryModule, SalesModule, PaymentsModule, CustomersModule, DebtsModule, ExpensesModule, CashSessionsModule, ReportsModule, SalesAnalysisModule, NotificationsModule, SettingsModule, AuditModule, CalculatorsModule],
   controllers: [AppController],
   providers: [AppService],
 })

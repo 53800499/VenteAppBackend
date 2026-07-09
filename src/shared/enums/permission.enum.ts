@@ -75,4 +75,9 @@ export enum Permission {
   SHOPS_DEACTIVATE = 'shops:deactivate',
   SHOPS_SWITCH = 'shops:switch',
   SHOPS_CONSOLIDATED_READ = 'shops:consolidated_read',
+
+  // Calculateurs
+  CALCULATORS_USE = 'calculators:use',
+  CALCULATORS_EXPORT = 'calculators:export',
+  CALCULATORS_HISTORY = 'calculators:history',
 }
