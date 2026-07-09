@@ -117,8 +117,13 @@ export class GetCustomerUseCase {
     );
     if (!customer) throw new CustomerNotFoundException(customerId);
 
-    const sales = await this.customers.listSales(customerId, auth.shopId, 50);
-    const customerDebts = await this.debts.listByShop(auth.shopId, { customerId });
+    const salesLimit = Math.max(customer.purchaseCount, 50);
+    const [sales, customerDebts, paidDebts, forgivenDebts] = await Promise.all([
+      this.customers.listSales(customerId, auth.shopId, salesLimit),
+      this.debts.listByShop(auth.shopId, { customerId }),
+      this.debts.listByShop(auth.shopId, { customerId, status: 'paid' }),
+      this.debts.listByShop(auth.shopId, { customerId, status: 'forgiven' }),
+    ]);
     const now = nowMs();
 
     return {
@@ -134,6 +139,10 @@ export class GetCustomerUseCase {
         createdAt: s.createdAt,
       })),
       debts: customerDebts.map((d) => toDebtResponse(d, this.debtValidation, now)),
+      paidDebts: paidDebts.map((d) => toDebtResponse(d, this.debtValidation, now)),
+      forgivenDebts: forgivenDebts.map((d) =>
+        toDebtResponse(d, this.debtValidation, now),
+      ),
     };
   }
 }

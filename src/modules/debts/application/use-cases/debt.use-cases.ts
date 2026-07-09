@@ -22,6 +22,10 @@ function lastPaymentAt(debt: Debt): number | null {
 
 export function toDebtResponse(debt: Debt, validation: DebtValidationService, now = nowMs()) {
   const lastPay = lastPaymentAt(debt);
+  const forgivenAmount =
+    debt.status === 'forgiven'
+      ? Math.max(debt.originalAmount - debt.amountPaid, 0)
+      : null;
   return {
     id: debt.id,
     customerId: debt.customerId,
@@ -42,6 +46,10 @@ export function toDebtResponse(debt: Debt, validation: DebtValidationService, no
       now,
     ),
     lastPaymentAt: lastPay,
+    forgivenAt: debt.forgivenAt,
+    forgivenReason: debt.forgivenReason,
+    forgivenByUserId: debt.forgivenByUserId,
+    forgivenAmount,
     payments: debt.payments.map((p) => ({
       id: p.id,
       paymentId: p.paymentId,
