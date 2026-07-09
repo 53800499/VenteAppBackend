@@ -30,6 +30,7 @@ import { TenantGuard } from '../../../tenants/tenant.guard';
 import {
   ArchiveCustomerResponseDto,
   CreateCustomerDto,
+  CustomerDetailResponseDto,
   CustomerResponseDto,
   DebtReminderResponseDto,
   DebtorsListResponseDto,
@@ -88,9 +89,11 @@ export class CustomersController {
 
   @Get(':id')
   @RequirePermissions(Permission.CUSTOMERS_READ)
-  @ApiOperation({ summary: 'Fiche client avec historique récent' })
+  @ApiOperation({
+    summary: 'Fiche client complète (achats, dettes ouvertes, remboursées, pardonnées)',
+  })
   @ApiParam({ name: 'id', example: 1 })
-  @ApiOkResponse({ type: CustomerResponseDto })
+  @ApiOkResponse({ type: CustomerDetailResponseDto })
   @ApiNotFoundResponse({ description: 'Client introuvable' })
   get(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
     return this.getCustomer.execute(auth, id);

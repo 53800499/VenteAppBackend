@@ -147,6 +147,18 @@ export class DebtResponseDto {
 
   @ApiPropertyOptional({ type: [DebtPaymentResponseDto] })
   payments?: DebtPaymentResponseDto[];
+
+  @ApiPropertyOptional({ description: 'Date du pardon (statut forgiven)' })
+  forgivenAt?: number | null;
+
+  @ApiPropertyOptional({ description: 'Motif du pardon' })
+  forgivenReason?: string | null;
+
+  @ApiPropertyOptional({ description: 'Utilisateur ayant pardonné la dette' })
+  forgivenByUserId?: number | null;
+
+  @ApiPropertyOptional({ description: 'Montant pardonné' })
+  forgivenAmount?: number | null;
 }
 
 export class DebtsSummaryResponseDto {

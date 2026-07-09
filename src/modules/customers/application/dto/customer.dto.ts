@@ -236,3 +236,29 @@ export class ArchiveCustomerResponseDto {
   @ApiProperty()
   archived: boolean;
 }
+
+export class CustomerDetailResponseDto {
+  @ApiProperty({ type: CustomerResponseDto })
+  customer: CustomerResponseDto;
+
+  @ApiProperty({ type: [CustomerSaleSummaryDto] })
+  sales: CustomerSaleSummaryDto[];
+
+  @ApiProperty({
+    type: [Object],
+    description: 'Dettes ouvertes ou partielles',
+  })
+  debts: unknown[];
+
+  @ApiProperty({
+    type: [Object],
+    description: 'Dettes entièrement remboursées (statut paid)',
+  })
+  paidDebts: unknown[];
+
+  @ApiProperty({
+    type: [Object],
+    description: 'Dettes pardonnées (statut forgiven)',
+  })
+  forgivenDebts: unknown[];
+}
