@@ -42,7 +42,7 @@ export class CalculatorsController {
   }
 
   @Post('calculators/toggle')
-  @RequirePermissions(Permission.CALCULATORS_USE)
+  @RequirePermissions(Permission.SETTINGS_WRITE)
   @ApiOperation({ summary: 'Activer ou désactiver le module pour la boutique' })
   @ApiOkResponse({ description: 'Nouveau statut du module' })
   toggleModule(@CurrentAuth() auth: AuthContext, @Body() dto: ToggleModuleDto) {

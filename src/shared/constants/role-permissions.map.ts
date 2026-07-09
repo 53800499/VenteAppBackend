@@ -20,6 +20,9 @@ const SELLER_PERMISSIONS: Permission[] = [
   Permission.CASH_SESSIONS_OPEN,
   Permission.CASH_SESSIONS_CLOSE,
   Permission.CASH_SESSIONS_ADJUST,
+  Permission.CALCULATORS_USE,
+  Permission.CALCULATORS_EXPORT,
+  Permission.CALCULATORS_HISTORY,
 ];
 
 const VIEWER_PERMISSIONS: Permission[] = [
@@ -33,6 +36,8 @@ const VIEWER_PERMISSIONS: Permission[] = [
   Permission.REPORTS_READ,
   Permission.EXPENSES_READ,
   Permission.CASH_SESSIONS_READ,
+  Permission.CALCULATORS_USE,
+  Permission.CALCULATORS_HISTORY,
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
