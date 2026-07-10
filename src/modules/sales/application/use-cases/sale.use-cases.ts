@@ -330,6 +330,11 @@ export class ListSalesUseCase {
       totalAmount: sale.totalAmount,
       status: sale.status,
       createdAt: sale.createdAt,
+      customerId: sale.customerId ?? undefined,
+      amountCash: sale.amountCash,
+      amountMomo: sale.amountMomo,
+      amountCredit: sale.amountCredit,
+      paymentMethod: sale.paymentMethod,
     }));
   }
 }

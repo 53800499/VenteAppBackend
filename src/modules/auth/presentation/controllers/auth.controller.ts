@@ -84,6 +84,7 @@ import {
   CompleteWhatsappOtpLoginDto,
   RequestWhatsappOtpDto,
   RequestWhatsappOtpResponseDto,
+  ResetPinWithWhatsappOtpDto,
   VerifyWhatsappOtpDto,
   VerifyWhatsappOtpResponseDto,
 } from '../../application/dto/whatsapp-otp.dto';
@@ -92,6 +93,7 @@ import {
   RequestWhatsappOtpUseCase,
   VerifyWhatsappOtpUseCase,
 } from '../../application/use-cases/whatsapp-otp.use-cases';
+import { ResetPinWithWhatsappOtpUseCase } from '../../application/use-cases/reset-pin-with-whatsapp.use-case';
 import { CheckSetupAvailableUseCase } from '../../application/use-cases/check-setup-available.use-case';
 import { ValidateSetupOwnerUseCase } from '../../application/use-cases/validate-setup-owner.use-case';
 
@@ -116,6 +118,7 @@ export class AuthController {
     private readonly requestWhatsappOtp: RequestWhatsappOtpUseCase,
     private readonly verifyWhatsappOtp: VerifyWhatsappOtpUseCase,
     private readonly completeWhatsappOtpLogin: CompleteWhatsappOtpLoginUseCase,
+    private readonly resetPinWithWhatsappOtp: ResetPinWithWhatsappOtpUseCase,
     private readonly tenantContext: TenantContextService,
     private readonly tenantDb: TenantDatabaseService,
   ) {}
@@ -209,6 +212,19 @@ export class AuthController {
   async completeWhatsappOtpHandler(@Body() dto: CompleteWhatsappOtpLoginDto) {
     await this.bindTenant(dto.shopId);
     return this.completeWhatsappOtpLogin.execute(dto);
+  }
+
+  @Post('whatsapp/otp/reset-pin')
+  @ApiOperation({
+    summary: 'Réinitialiser le PIN après vérification WhatsApp',
+    description:
+      'Met à jour le hash PIN et débloque le compte après OTP WhatsApp valide.',
+  })
+  @ApiOkResponse({ description: 'PIN mis à jour' })
+  @ApiUnauthorizedResponse({ description: 'Jeton OTP expiré ou invalide' })
+  async resetPinWithWhatsappOtpHandler(@Body() dto: ResetPinWithWhatsappOtpDto) {
+    await this.bindTenant(dto.shopId);
+    return this.resetPinWithWhatsappOtp.execute(dto);
   }
 
   @Get('setup/available')

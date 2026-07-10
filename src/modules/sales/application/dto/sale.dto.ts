@@ -243,4 +243,19 @@ export class SaleListItemDto {
 
   @ApiProperty()
   createdAt: number;
+
+  @ApiPropertyOptional()
+  customerId?: number;
+
+  @ApiPropertyOptional()
+  amountCash?: number;
+
+  @ApiPropertyOptional()
+  amountMomo?: number;
+
+  @ApiPropertyOptional()
+  amountCredit?: number;
+
+  @ApiPropertyOptional()
+  paymentMethod?: string;
 }

@@ -50,6 +50,28 @@ export class CompleteWhatsappOtpLoginDto {
   deviceLabel?: string;
 }
 
+export class ResetPinWithWhatsappOtpDto {
+  @ApiProperty({ description: 'Jeton émis après vérification OTP WhatsApp' })
+  @IsString()
+  @IsNotEmpty()
+  verificationToken: string;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  shopId: number;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  userId: number;
+
+  @ApiProperty({ example: '5678', description: 'Nouveau code PIN (4 à 6 chiffres)' })
+  @IsString()
+  @Matches(/^\d{4,6}$/)
+  newPin: string;
+}
+
 export class ShopMembershipItemDto {
   @ApiProperty({ example: 1 })
   userId: number;

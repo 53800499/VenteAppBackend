@@ -28,6 +28,7 @@ import {
   RequestWhatsappOtpUseCase,
   VerifyWhatsappOtpUseCase,
 } from './application/use-cases/whatsapp-otp.use-cases';
+import { ResetPinWithWhatsappOtpUseCase } from './application/use-cases/reset-pin-with-whatsapp.use-case';
 import { UserSessionRepository } from './domain/repositories/user-session.repository';
 import { OtpChallengeRepository } from './domain/repositories/otp-challenge.repository';
 import { MembershipResolverService } from './domain/services/membership-resolver.service';
@@ -75,6 +76,7 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     RequestWhatsappOtpUseCase,
     VerifyWhatsappOtpUseCase,
     CompleteWhatsappOtpLoginUseCase,
+    ResetPinWithWhatsappOtpUseCase,
     EmergencyUnlockUseCase,
     EnableBiometricUseCase,
     TouchSessionUseCase,
