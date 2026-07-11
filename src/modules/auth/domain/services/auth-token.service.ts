@@ -41,7 +41,7 @@ export class AuthTokenService {
     await this.sessions.revokeActiveByDevice(user.id, targetShopId, device.deviceId, timestamp);
 
     const refreshTokenRaw = randomBytes(32).toString('hex');
-    const sessionExpiresAt = timestamp + msFromMinutes(settings.autoLockMinutes);
+    const sessionExpiresAt = timestamp + msFromMinutes(Math.max(settings.autoLockMinutes, 60));
     const refreshExpiresAt = timestamp + this.getRefreshTtlMs();
 
     const session = await this.sessions.create({
@@ -68,7 +68,7 @@ export class AuthTokenService {
   ): Promise<IssuedTokenPair & { refreshToken: string }> {
     const timestamp = nowMs();
     const refreshTokenRaw = randomBytes(32).toString('hex');
-    const sessionExpiresAt = timestamp + msFromMinutes(settings.autoLockMinutes);
+    const sessionExpiresAt = timestamp + msFromMinutes(Math.max(settings.autoLockMinutes, 60));
     const refreshExpiresAt = timestamp + this.getRefreshTtlMs();
 
     await this.sessions.updateRefreshToken(

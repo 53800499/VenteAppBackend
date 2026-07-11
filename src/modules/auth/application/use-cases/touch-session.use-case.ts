@@ -15,7 +15,9 @@ export class TouchSessionUseCase {
     if (!session || session.isRevoked()) {
       throw new UnauthorizedException('Session invalide.');
     }
-    if (session.sessionExpiresAt <= nowMs()) {
+    // Si seule session_expires_at est dépassée mais le refresh JWT est actif,
+    // on prolonge (même logique que SessionGuard) au lieu d'échouer.
+    if (session.sessionExpiresAt <= nowMs() && !session.isRefreshActive(nowMs())) {
       throw new UnauthorizedException('Session expirée.');
     }
 
@@ -23,7 +25,7 @@ export class TouchSessionUseCase {
       (await this.settings.findByShopId(shopId)) ??
       this.settings.getDefault(shopId);
     const timestamp = nowMs();
-    const sessionExpiresAt = timestamp + msFromMinutes(shopSettings.autoLockMinutes);
+    const sessionExpiresAt = timestamp + msFromMinutes(Math.max(shopSettings.autoLockMinutes, 60));
 
     await this.sessions.touchById(sessionId, timestamp, sessionExpiresAt);
   }

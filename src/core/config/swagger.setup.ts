@@ -3,10 +3,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
-    .setTitle('VenteApp API')
+    .setTitle('ARIKE API')
     .setDescription(
       [
-        'API backend **VenteApp Bénin** — gestion commerciale offline-first.',
+        'API backend **ARIKE** — gestion commerciale offline-first.',
         '',
         '---',
         '',
@@ -194,7 +194,7 @@ export function setupSwagger(app: INestApplication): void {
       ].join('\n'),
     )
     .setVersion('1.0.0')
-    .setContact('VenteApp', '', 'support@venteapp.bj')
+    .setContact('ARIKE', '', 'support@venteapp.bj')
     .addBearerAuth(
       {
         type: 'http',
@@ -227,7 +227,7 @@ export function setupSwagger(app: INestApplication): void {
   });
 
   SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'VenteApp — Documentation API',
+    customSiteTitle: 'ARIKE — Documentation API',
     swaggerOptions: {
       persistAuthorization: true,
       docExpansion: 'list',

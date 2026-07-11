@@ -8,17 +8,18 @@ import { PermissionService } from '../../core/security/permission.service';
 import { AuthTokenService } from '../../modules/auth/domain/services/auth-token.service';
 import { UserSessionRepository } from '../../modules/auth/domain/repositories/user-session.repository';
 import { ShopOwnershipService } from '../../modules/shops/domain/services/shop-ownership.service';
+import { SettingsRepository } from '../../modules/shops/domain/repositories/settings.repository';
 import { TenantContextService } from '../../modules/tenants/tenant-context.service';
 import { TenantDatabaseService } from '../../modules/tenants/tenant-database.service';
 import { UserRepository } from '../../modules/users/domain/repositories/user.repository';
 import { TouchSessionUseCase } from '../../modules/auth/application/use-cases/touch-session.use-case';
-import { AuthContext, AuthenticatedRequest } from '../interfaces/auth-context.interface';
+import { AuthenticatedRequest } from '../interfaces/auth-context.interface';
 import {
   extractActiveShopIdHeader,
   extractBearerToken,
   requireBearerJwt,
 } from '../utils/auth-header.util';
-import { nowMs } from '../utils/time.util';
+import { msFromMinutes, nowMs } from '../utils/time.util';
 
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -31,6 +32,7 @@ export class SessionGuard implements CanActivate {
     private readonly tenantDb: TenantDatabaseService,
     private readonly authTokenService: AuthTokenService,
     private readonly touchSession: TouchSessionUseCase,
+    private readonly settings: SettingsRepository,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -40,10 +42,30 @@ export class SessionGuard implements CanActivate {
     const bearer = requireBearerJwt(extractBearerToken(headers));
     const payload = await this.authTokenService.verifyAccessToken(bearer);
 
-    const session = await this.sessions.findById(payload.sid);
+    let session = await this.sessions.findById(payload.sid);
     const timestamp = nowMs();
-    if (!session || session.isRevoked() || !session.isSessionActive(timestamp)) {
+    if (!session || session.isRevoked()) {
       throw new UnauthorizedException('Session invalide ou expirée.');
+    }
+
+    // Offline-first : `session_expires_at` suit autoLockMinutes (verrou PIN),
+    // souvent plus court que le JWT refresh. Si le refresh est encore valide,
+    // on ravive la session plutôt que de bloquer (ex. changement de boutique).
+    if (!session.isSessionActive(timestamp)) {
+      if (!session.isRefreshActive(timestamp)) {
+        throw new UnauthorizedException('Session invalide ou expirée.');
+      }
+      const shopSettings =
+        (await this.settings.findByShopId(session.shopId)) ??
+        this.settings.getDefault(session.shopId);
+      const revivedExpiresAt =
+        timestamp + msFromMinutes(Math.max(shopSettings.autoLockMinutes, 60));
+      await this.sessions.touchById(session.id, timestamp, revivedExpiresAt);
+      const revived = await this.sessions.findById(payload.sid);
+      if (!revived || !revived.isSessionActive(timestamp)) {
+        throw new UnauthorizedException('Session invalide ou expirée.');
+      }
+      session = revived;
     }
 
     if (session.userId !== payload.sub) {

@@ -31,7 +31,7 @@ export class SwitchShopUseCase {
     const shopSettings =
       (await this.settings.findByShopId(shopId)) ?? this.settings.getDefault(shopId);
     const timestamp = nowMs();
-    const sessionExpiresAt = timestamp + msFromMinutes(shopSettings.autoLockMinutes);
+    const sessionExpiresAt = timestamp + msFromMinutes(Math.max(shopSettings.autoLockMinutes, 60));
 
     await this.sessions.updateActiveShop(auth.sessionId, shopId, timestamp, sessionExpiresAt);
 
