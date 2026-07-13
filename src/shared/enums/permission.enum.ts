@@ -80,4 +80,12 @@ export enum Permission {
   CALCULATORS_USE = 'calculators:use',
   CALCULATORS_EXPORT = 'calculators:export',
   CALCULATORS_HISTORY = 'calculators:history',
+
+  // Approvisionnements (Procurement)
+  PROCUREMENT_READ = 'procurement:read',
+  PROCUREMENT_CREATE = 'procurement:create',
+  PROCUREMENT_UPDATE = 'procurement:update',
+  PROCUREMENT_RECEIVE = 'procurement:receive',
+  PROCUREMENT_INVOICE_PAY = 'procurement:invoice_pay',
+  PROCUREMENT_CANCEL = 'procurement:cancel',
 }

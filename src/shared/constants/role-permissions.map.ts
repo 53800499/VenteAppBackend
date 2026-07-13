@@ -23,6 +23,8 @@ const SELLER_PERMISSIONS: Permission[] = [
   Permission.CALCULATORS_USE,
   Permission.CALCULATORS_EXPORT,
   Permission.CALCULATORS_HISTORY,
+  Permission.PROCUREMENT_READ,
+  Permission.PROCUREMENT_RECEIVE,
 ];
 
 const VIEWER_PERMISSIONS: Permission[] = [
@@ -38,6 +40,7 @@ const VIEWER_PERMISSIONS: Permission[] = [
   Permission.CASH_SESSIONS_READ,
   Permission.CALCULATORS_USE,
   Permission.CALCULATORS_HISTORY,
+  Permission.PROCUREMENT_READ,
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {

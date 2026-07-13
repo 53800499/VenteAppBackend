@@ -14,3 +14,4 @@ export * from './debts/debts.module';
 export * from './reports/reports.module';
 export * from './notifications/notifications.module';
 export * from './settings/settings.module';
+export * from './purchases/purchases.module';
