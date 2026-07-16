@@ -216,10 +216,14 @@ export class CreateReceiptItemDto {
   @Min(1)
   purchaseOrderItemId: number;
 
-  @ApiProperty({ example: 1 })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Optionnel : dérivé de purchaseOrderItemId si absent',
+  })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  productId: number;
+  productId?: number;
 
   @ApiProperty({ example: 50 })
   @IsInt()

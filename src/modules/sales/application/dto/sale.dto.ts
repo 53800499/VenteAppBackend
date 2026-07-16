@@ -49,7 +49,7 @@ export class SaleLineDto {
   @Min(1)
   quantity: number;
 
-  @ApiPropertyOptional({ example: 15000, description: 'Prix unitaire (défaut = prix catalogue)' })
+  @ApiPropertyOptional({ example: 15000, description: 'Prix unitaire (défaut = Prix de vente)' })
   @IsOptional()
   @IsInt()
   @Min(1)

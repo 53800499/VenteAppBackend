@@ -345,18 +345,19 @@ export class ReceiveItemsUseCase {
       const remainingToReceive = poItem.quantityOrdered - poItem.quantityReceived;
       if (item.quantityReceived > remainingToReceive) {
         throw new BadRequestException(
-          `La quantité reçue (${item.quantityReceived}) dépasse la quantité restante à recevoir (${remainingToReceive}) pour le produit #${item.productId}.`,
+          `La quantité reçue (${item.quantityReceived}) dépasse la quantité restante à recevoir (${remainingToReceive}) pour le produit #${poItem.productId}.`,
         );
       }
 
-      const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
+      const productId = item.productId ?? poItem.productId;
+      const product = await this.products.findByIdAndShop(productId, auth.shopId);
       if (!product) {
-        throw new NotFoundException(`Produit #${item.productId} introuvable.`);
+        throw new NotFoundException(`Produit #${productId} introuvable.`);
       }
 
       receiptItemsData.push({
         purchaseOrderItemId: item.purchaseOrderItemId,
-        productId: item.productId,
+        productId,
         quantityReceived: item.quantityReceived,
         unitCost: item.unitCost,
         batchNumber: item.batchNumber ?? null,

@@ -62,7 +62,7 @@ export class CreateProductDto {
   @IsString()
   sku?: string;
 
-  @ApiProperty({ example: 15000, description: 'Prix catalogue détail FCFA' })
+  @ApiProperty({ example: 15000, description: 'Prix de vente détail FCFA' })
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -213,7 +213,7 @@ export class ProductResponseDto {
   @ApiPropertyOptional({ example: 12000, nullable: true, description: 'Prix d\'achat FCFA' })
   priceBuy: number | null;
 
-  @ApiProperty({ example: 15000, description: 'Prix catalogue détail FCFA' })
+  @ApiProperty({ example: 15000, description: 'Prix de vente détail FCFA' })
   priceSell: number;
 
   @ApiPropertyOptional({ example: 14000, nullable: true })
