@@ -168,6 +168,9 @@ export class SaleItemResponseDto {
   @ApiProperty()
   unitPrice: number;
 
+  @ApiPropertyOptional({ description: 'Coût d\'achat FIFO unitaire (marge)' })
+  unitCost?: number | null;
+
   @ApiProperty()
   lineTotal: number;
 }

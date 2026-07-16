@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Min } from 'class-validator';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { InventoryLotMapper } from '../../infrastructure/mappers/inventory-lot.mapper';
 import { InventoryLotService } from '../../domain/services/inventory-lot.service';
@@ -25,6 +27,10 @@ export class InventoryLotResponseDto {
 
 export class ListInventoryLotsQueryDto {
   @ApiPropertyOptional({ description: 'Filtrer par produit local serveur' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
   productId?: number;
 }
 

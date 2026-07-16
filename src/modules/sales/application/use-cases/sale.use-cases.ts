@@ -58,6 +58,7 @@ function toSaleResponse(sale: Sale) {
       productName: item.productName,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      unitCost: item.unitCost,
       lineTotal: item.lineTotal,
     })),
   };
