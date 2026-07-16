@@ -9,6 +9,7 @@ export type InventoryLotRow = {
   unit_cost: number;
   quantity_received: number;
   quantity_remaining: number;
+  quantity_reserved?: number;
   batch_number: string | null;
   expiry_date: number | null;
   received_at: number;

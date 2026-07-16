@@ -67,7 +67,8 @@ export class InventoryLotService {
 
     for (const lot of activeLots) {
       if (remaining <= 0) break;
-      const take = Math.min(lot.quantityRemaining, remaining);
+      const available = lot.quantityRemaining - lot.quantityReserved;
+      const take = Math.min(available, remaining);
       if (take <= 0) continue;
 
       const newRemaining = lot.quantityRemaining - take;

@@ -75,6 +75,12 @@ import { InventoryLotsController } from './presentation/controllers/inventory-lo
     ListInventoryLotsUseCase,
     ListProductInventoryLotsUseCase,
   ],
-  exports: [ProductRepository, CategoryRepository, StockMovementRepository, InventoryLotService],
+  exports: [
+    ProductRepository,
+    CategoryRepository,
+    StockMovementRepository,
+    InventoryLotRepository,
+    InventoryLotService,
+  ],
 })
 export class InventoryModule {}

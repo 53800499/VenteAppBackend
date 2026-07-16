@@ -23,6 +23,7 @@ import { UsersModule } from './modules/users/users.module';
 
 import { CalculatorsModule } from './modules/calculators/calculators.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
     AuditModule,
     CalculatorsModule,
     PurchasesModule,
+    StockTransfersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

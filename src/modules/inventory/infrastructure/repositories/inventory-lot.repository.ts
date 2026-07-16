@@ -89,13 +89,27 @@ export class SupabaseInventoryLotRepository extends InventoryLotRepository {
     status: string,
     version: number,
   ): Promise<void> {
+    await this.updateStockState(lotId, quantityRemaining, undefined, status, version);
+  }
+
+  async updateStockState(
+    lotId: number,
+    quantityRemaining: number,
+    quantityReserved: number | undefined,
+    status: string,
+    version: number,
+  ): Promise<void> {
+    const patch: Record<string, unknown> = {
+      quantity_remaining: quantityRemaining,
+      status,
+      version: version + 1,
+    };
+    if (quantityReserved != null) {
+      patch.quantity_reserved = quantityReserved;
+    }
     const { error } = await this.supabase.db
       .from('inventory_lots')
-      .update({
-        quantity_remaining: quantityRemaining,
-        status,
-        version: version + 1,
-      })
+      .update(patch)
       .eq('id', lotId);
     if (error) throw new BadRequestException(error.message);
   }

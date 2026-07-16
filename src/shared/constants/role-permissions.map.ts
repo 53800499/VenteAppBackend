@@ -25,6 +25,9 @@ const SELLER_PERMISSIONS: Permission[] = [
   Permission.CALCULATORS_HISTORY,
   Permission.PROCUREMENT_READ,
   Permission.PROCUREMENT_RECEIVE,
+  Permission.INVENTORY_TRANSFER_READ,
+  Permission.INVENTORY_TRANSFER_CREATE,
+  Permission.INVENTORY_TRANSFER_RECEIVE,
 ];
 
 const VIEWER_PERMISSIONS: Permission[] = [
@@ -41,6 +44,7 @@ const VIEWER_PERMISSIONS: Permission[] = [
   Permission.CALCULATORS_USE,
   Permission.CALCULATORS_HISTORY,
   Permission.PROCUREMENT_READ,
+  Permission.INVENTORY_TRANSFER_READ,
 ];
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {

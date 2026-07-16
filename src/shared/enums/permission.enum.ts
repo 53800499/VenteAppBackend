@@ -88,4 +88,9 @@ export enum Permission {
   PROCUREMENT_RECEIVE = 'procurement:receive',
   PROCUREMENT_INVOICE_PAY = 'procurement:invoice_pay',
   PROCUREMENT_CANCEL = 'procurement:cancel',
+
+  // Transferts inter-boutiques
+  INVENTORY_TRANSFER_READ = 'inventory:transfer:read',
+  INVENTORY_TRANSFER_CREATE = 'inventory:transfer:create',
+  INVENTORY_TRANSFER_RECEIVE = 'inventory:transfer:receive',
 }

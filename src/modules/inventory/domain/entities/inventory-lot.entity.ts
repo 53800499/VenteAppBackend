@@ -4,6 +4,7 @@ export const InventoryLotSourceType = {
   DIRECT_PROCUREMENT: 'direct_procurement',
   MANUAL_RESTOCK: 'manual_restock',
   SALE_CANCEL_RESTORE: 'sale_cancel_restore',
+  STOCK_TRANSFER_IN: 'stock_transfer_in',
 } as const;
 
 export type InventoryLotSourceTypeValue =
@@ -29,6 +30,7 @@ export class InventoryLot {
     public readonly unitCost: number,
     public readonly quantityReceived: number,
     public readonly quantityRemaining: number,
+    public readonly quantityReserved: number,
     public readonly batchNumber: string | null,
     public readonly expiryDate: number | null,
     public readonly receivedAt: number,

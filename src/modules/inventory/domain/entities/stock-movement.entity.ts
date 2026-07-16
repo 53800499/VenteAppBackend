@@ -5,7 +5,9 @@ export type StockMovementType =
   | 'loss'
   | 'return'
   | 'initial'
-  | 'sale_cancel';
+  | 'sale_cancel'
+  | 'transfer_out'
+  | 'transfer_in';
 
 export class StockMovement {
   constructor(

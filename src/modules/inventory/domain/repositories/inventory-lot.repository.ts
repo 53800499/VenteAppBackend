@@ -52,6 +52,14 @@ export abstract class InventoryLotRepository {
     version: number,
   ): Promise<void>;
 
+  abstract updateStockState(
+    lotId: number,
+    quantityRemaining: number,
+    quantityReserved: number,
+    status: InventoryLotStatusValue,
+    version: number,
+  ): Promise<void>;
+
   abstract createAllocations(data: CreateSaleItemLotAllocationData[]): Promise<void>;
 
   abstract findAllocationsBySaleItemIds(saleItemIds: number[]): Promise<
