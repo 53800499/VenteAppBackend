@@ -377,6 +377,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
       .insert({
         shop_id: shopId,
         purchase_order_id: data.purchaseOrderId,
+        supplier_id: data.supplierId,
+        receipt_type: data.receiptType,
         receipt_number: data.receiptNumber,
         received_at: data.receivedAt,
         received_by: data.receivedBy,
@@ -395,7 +397,7 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
     const recItemsToInsert = items.map((it) => ({
       shop_id: shopId,
       purchase_receipt_id: recRow.id,
-      purchase_order_item_id: it.purchaseOrderItemId,
+      purchase_order_item_id: it.purchaseOrderItemId ?? null,
       product_id: it.productId,
       quantity_received: it.quantityReceived,
       unit_cost: it.unitCost,
@@ -416,8 +418,10 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
       throw new BadRequestException(recItemErr.message);
     }
 
-    // Update quantities in PurchaseOrderItems
+    // Update quantities in PurchaseOrderItems (commande uniquement)
     for (const item of items) {
+      if (item.purchaseOrderItemId == null) continue;
+
       const { data: curPoItem, error: fetchErr } = await this.supabase.db
         .from('purchase_order_items')
         .select('quantity_received')
@@ -442,6 +446,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
       id: recRow.id,
       shopId: recRow.shop_id,
       purchaseOrderId: recRow.purchase_order_id,
+      supplierId: recRow.supplier_id,
+      receiptType: recRow.receipt_type ?? 'from_order',
       receiptNumber: recRow.receipt_number,
       receivedAt: recRow.received_at,
       receivedBy: recRow.received_by,
@@ -495,6 +501,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
         id: recRow.id,
         shopId: recRow.shop_id,
         purchaseOrderId: recRow.purchase_order_id,
+        supplierId: recRow.supplier_id,
+        receiptType: recRow.receipt_type ?? 'from_order',
         receiptNumber: recRow.receipt_number,
         receivedAt: recRow.received_at,
         receivedBy: recRow.received_by,

@@ -264,6 +264,60 @@ export class CreateReceiptDto {
   items: CreateReceiptItemDto[];
 }
 
+export class CreateDirectReceiptItemDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  productId: number;
+
+  @ApiProperty({ example: 50 })
+  @IsInt()
+  @Min(1)
+  quantityReceived: number;
+
+  @ApiProperty({ example: 5000 })
+  @IsInt()
+  @Min(0)
+  unitCost: number;
+
+  @ApiPropertyOptional({ example: 'LOT-CIM-2026' })
+  @IsOptional()
+  @IsString()
+  batchNumber?: string;
+
+  @ApiPropertyOptional({ example: 1811362800000 })
+  @IsOptional()
+  @IsInt()
+  expiryDate?: number;
+}
+
+export class CreateDirectGoodsReceiptDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  supplierId: number;
+
+  @ApiProperty({ example: 'GR-00001' })
+  @IsString()
+  @MinLength(2)
+  receiptNumber: string;
+
+  @ApiProperty({ example: 1779836400000 })
+  @IsInt()
+  receivedAt: number;
+
+  @ApiPropertyOptional({ example: 'Livraison directe' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiProperty({ type: [CreateDirectReceiptItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateDirectReceiptItemDto)
+  items: CreateDirectReceiptItemDto[];
+}
+
 export class CreateInvoiceDto {
   @ApiPropertyOptional({ example: 1 })
   @IsOptional()

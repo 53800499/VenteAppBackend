@@ -72,7 +72,10 @@ export interface PurchaseOrderItem {
 export interface PurchaseReceipt {
   id: number;
   shopId: number;
-  purchaseOrderId: number;
+  purchaseOrderId: number | null;
+  supplierId: number;
+  supplierName?: string;
+  receiptType: 'direct' | 'from_order';
   receiptNumber: string;
   receivedAt: number;
   receivedBy: number;
@@ -87,7 +90,7 @@ export interface PurchaseReceiptItem {
   id: number;
   shopId: number;
   purchaseReceiptId: number;
-  purchaseOrderItemId: number;
+  purchaseOrderItemId: number | null;
   productId: number;
   productName?: string;
   quantityReceived: number;

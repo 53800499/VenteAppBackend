@@ -7,6 +7,8 @@ import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.
 import { ProductNotFoundException } from '../../../inventory/exceptions/inventory.exceptions';
 import { ProductRepository } from '../../../inventory/domain/repositories/product.repository';
 import { StockMovementRepository } from '../../../inventory/domain/repositories/stock-movement.repository';
+import { InventoryLotService } from '../../../inventory/domain/services/inventory-lot.service';
+import { LotAllocationSlice } from '../../../inventory/domain/entities/inventory-lot.entity';
 import { Sale } from '../../domain/entities/sale.entity';
 import {
   SaleCustomerRepository,
@@ -73,6 +75,7 @@ export class CreateStandardSaleUseCase {
     private readonly receipts: ReceiptNumberService,
     private readonly logAudit: LogAuditUseCase,
     private readonly cashSessions: CashSessionRepository,
+    private readonly lots: InventoryLotService,
   ) {}
 
   private async assertOpenCashSession(shopId: number): Promise<void> {
@@ -135,15 +138,40 @@ export class CreateStandardSaleUseCase {
     const timestamp = nowMs();
     const receiptNumber = await this.receipts.generate(auth.shopId, timestamp);
 
-    const saleItems = productSnapshots.map(({ product, line }) => ({
-      product_id: product!.id,
-      product_name: product!.name,
-      quantity: line.quantity,
-      unit_price: line.unitPrice,
-      unit_cost: product!.priceBuy,
-      discount_amount: line.lineDiscountAmount,
-      line_total: this.validation.computeLineTotal(line),
-    }));
+    const fifoSnapshots: {
+      productId: number;
+      quantityBefore: number;
+      slices: LotAllocationSlice[];
+      unitCost: number;
+    }[] = [];
+
+    for (const { product, line } of productSnapshots) {
+      const quantityBefore = product!.quantityInStock;
+      const slices = await this.lots.allocateFifo({
+        shopId: auth.shopId,
+        productId: product!.id,
+        quantity: line.quantity,
+      });
+      fifoSnapshots.push({
+        productId: product!.id,
+        quantityBefore,
+        slices,
+        unitCost: InventoryLotService.weightedUnitCost(slices),
+      });
+    }
+
+    const saleItems = productSnapshots.map(({ product, line }) => {
+      const fifo = fifoSnapshots.find((f) => f.productId === product!.id)!;
+      return {
+        product_id: product!.id,
+        product_name: product!.name,
+        quantity: line.quantity,
+        unit_price: line.unitPrice,
+        unit_cost: fifo.unitCost,
+        discount_amount: line.lineDiscountAmount,
+        line_total: this.validation.computeLineTotal(line),
+      };
+    });
 
     const sale = await this.sales.createWithItems(
       {
@@ -169,22 +197,32 @@ export class CreateStandardSaleUseCase {
     );
 
     for (const { product, line } of productSnapshots) {
-      const quantityBefore = product!.quantityInStock;
-      const quantityAfter = quantityBefore - line.quantity;
-      await this.products.updateInShop(product!.id, auth.shopId, {
-        quantity_in_stock: quantityAfter,
-        updated_at: timestamp,
-        version: product!.version + 1,
-      });
+      const fifo = fifoSnapshots.find((f) => f.productId === product!.id)!;
+      const saleItem = sale.items.find(
+        (item) => item.productId === product!.id && item.quantity === line.quantity,
+      );
+      if (saleItem) {
+        await this.lots.recordSaleItemAllocations({
+          shopId: auth.shopId,
+          saleItemId: saleItem.id,
+          slices: fifo.slices,
+          createdAt: timestamp,
+        });
+      }
+
+      const refreshed = await this.products.findByIdAndShop(product!.id, auth.shopId);
+      const quantityAfter = refreshed?.quantityInStock ?? fifo.quantityBefore - line.quantity;
+
       await this.stockMovements.create({
         shop_id: auth.shopId,
         product_id: product!.id,
         user_id: auth.userId,
         type: 'sale',
         quantity_change: -line.quantity,
-        quantity_before: quantityBefore,
+        quantity_before: fifo.quantityBefore,
         quantity_after: quantityAfter,
         sale_id: sale.id,
+        unit_cost: fifo.unitCost,
         created_at: timestamp,
       });
     }
@@ -359,6 +397,7 @@ export class CancelSaleUseCase {
     private readonly debts: SaleDebtRepository,
     private readonly validation: SaleValidationService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly lots: InventoryLotService,
   ) {}
 
   async execute(auth: AuthContext, saleId: number, reason: string) {
@@ -379,17 +418,25 @@ export class CancelSaleUseCase {
     }
 
     if (sale.saleType === 'standard') {
+      const saleItemIds = sale.items.map((item) => item.id);
+      const stockBefore = new Map<number, number>();
+
+      for (const item of sale.items) {
+        if (!item.productId) continue;
+        const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
+        if (product) stockBefore.set(item.productId, product.quantityInStock);
+      }
+
+      await this.lots.restoreLotsForSale(auth.shopId, saleItemIds);
+
       for (const item of sale.items) {
         if (!item.productId) continue;
         const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
         if (!product) continue;
-        const quantityBefore = product.quantityInStock;
-        const quantityAfter = quantityBefore + item.quantity;
-        await this.products.updateInShop(product.id, auth.shopId, {
-          quantity_in_stock: quantityAfter,
-          updated_at: now,
-          version: product.version + 1,
-        });
+
+        const quantityBefore = stockBefore.get(item.productId) ?? product.quantityInStock;
+        const quantityAfter = product.quantityInStock;
+
         await this.stockMovements.create({
           shop_id: auth.shopId,
           product_id: product.id,
@@ -400,6 +447,7 @@ export class CancelSaleUseCase {
           quantity_after: quantityAfter,
           sale_id: sale.id,
           reason,
+          unit_cost: item.unitCost,
           created_at: now,
         });
       }

@@ -3,6 +3,8 @@ import { AuthContext } from '../../../../shared/interfaces/auth-context.interfac
 import { nowMs } from '../../../../shared/utils/time.util';
 import { ProductRepository } from '../../../inventory/domain/repositories/product.repository';
 import { StockMovementRepository } from '../../../inventory/domain/repositories/stock-movement.repository';
+import { InventoryLotService } from '../../../inventory/domain/services/inventory-lot.service';
+import { InventoryLotSourceType } from '../../../inventory/domain/entities/inventory-lot.entity';
 import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.use-case';
 import { AuditAction, AuditModule } from '../../../../shared/enums/audit.enum';
 import { PurchasesRepository } from '../../domain/repositories/purchases.repository';
@@ -12,6 +14,7 @@ import {
   CreatePaymentDto,
   CreatePurchaseOrderDto,
   CreateReceiptDto,
+  CreateDirectGoodsReceiptDto,
   CreateSupplierDto,
   ListPurchaseOrdersQueryDto,
   UpdatePurchaseOrderDto,
@@ -308,6 +311,7 @@ export class ReceiveItemsUseCase {
     private readonly stockMovements: StockMovementRepository,
     private readonly validation: ProcurementValidationService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly lots: InventoryLotService,
   ) {}
 
   async execute(auth: AuthContext, poId: number, dto: CreateReceiptDto) {
@@ -367,6 +371,8 @@ export class ReceiveItemsUseCase {
       auth.shopId,
       {
         purchaseOrderId: poId,
+        supplierId: po.supplierId,
+        receiptType: 'from_order',
         receiptNumber: dto.receiptNumber,
         receivedAt: dto.receivedAt,
         receivedBy: auth.userId,
@@ -382,20 +388,37 @@ export class ReceiveItemsUseCase {
       })),
     );
 
-    // Apply inventory updates
+    // Apply inventory updates (lots FIFO + mouvements)
     for (const ri of receiptItemsData) {
+      const receiptItem = receipt.items?.find(
+        (item) => item.purchaseOrderItemId === ri.purchaseOrderItemId,
+      );
       const quantityBefore = ri.product.quantityInStock;
-      const quantityAfter = quantityBefore + ri.quantityReceived;
 
-      // Update product quantity & buying price in database
-      await this.products.updateInShop(ri.productId, auth.shopId, {
-        quantity_in_stock: quantityAfter,
-        price_buy: ri.unitCost, // Update buying price to latest receipt cost
-        updated_at: timestamp,
-        version: ri.product.version + 1,
-      });
+      if (ri.quantityReceived > 0 && receiptItem) {
+        await this.lots.createLot({
+          shopId: auth.shopId,
+          productId: ri.productId,
+          sourceType: InventoryLotSourceType.PROCUREMENT_RECEIPT,
+          sourceId: receipt.id,
+          purchaseReceiptItemId: receiptItem.id,
+          supplierId: po.supplierId ?? null,
+          unitCost: ri.unitCost,
+          quantity: ri.quantityReceived,
+          batchNumber: ri.batchNumber,
+          expiryDate: ri.expiryDate,
+          receivedAt: dto.receivedAt,
+        });
 
-      // Create stock movement
+        await this.products.updateInShop(ri.productId, auth.shopId, {
+          price_buy: ri.unitCost,
+          updated_at: timestamp,
+        });
+      }
+
+      const refreshed = await this.products.findByIdAndShop(ri.productId, auth.shopId);
+      const quantityAfter = refreshed?.quantityInStock ?? quantityBefore + ri.quantityReceived;
+
       await this.stockMovements.create({
         shop_id: auth.shopId,
         product_id: ri.productId,
@@ -409,7 +432,6 @@ export class ReceiveItemsUseCase {
         created_at: timestamp,
       });
 
-      // Audit stock adjustments
       await this.logAudit.execute({
         shopId: auth.shopId,
         userId: auth.userId,
@@ -541,6 +563,133 @@ export class RecordSupplierPaymentUseCase {
     }
 
     return payment;
+  }
+}
+
+@Injectable()
+export class CreateDirectGoodsReceiptUseCase {
+  constructor(
+    private readonly repo: PurchasesRepository,
+    private readonly products: ProductRepository,
+    private readonly stockMovements: StockMovementRepository,
+    private readonly validation: ProcurementValidationService,
+    private readonly logAudit: LogAuditUseCase,
+    private readonly lots: InventoryLotService,
+  ) {}
+
+  async execute(auth: AuthContext, dto: CreateDirectGoodsReceiptDto) {
+    this.validation.assertNotEmpty(dto.receiptNumber, 'Numéro de bon de réception');
+    this.validation.assertPositive(dto.items.length, 'Nombre d\'articles reçus');
+
+    const supplier = await this.repo.findSupplier(auth.shopId, dto.supplierId);
+    if (!supplier) {
+      throw new NotFoundException('Fournisseur introuvable.');
+    }
+
+    const receiptItemsData: Array<{
+      productId: number;
+      quantityReceived: number;
+      unitCost: number;
+      batchNumber: string | null;
+      expiryDate: number | null;
+      product: NonNullable<Awaited<ReturnType<ProductRepository['findByIdAndShop']>>>;
+    }> = [];
+
+    const timestamp = nowMs();
+
+    for (const item of dto.items) {
+      const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
+      if (!product) {
+        throw new NotFoundException(`Produit #${item.productId} introuvable.`);
+      }
+
+      receiptItemsData.push({
+        productId: item.productId,
+        quantityReceived: item.quantityReceived,
+        unitCost: item.unitCost,
+        batchNumber: item.batchNumber ?? null,
+        expiryDate: item.expiryDate ?? null,
+        product,
+      });
+    }
+
+    const receipt = await this.repo.createReceipt(
+      auth.shopId,
+      {
+        purchaseOrderId: null,
+        supplierId: dto.supplierId,
+        receiptType: 'direct',
+        receiptNumber: dto.receiptNumber,
+        receivedAt: dto.receivedAt,
+        receivedBy: auth.userId,
+        notes: dto.notes ?? null,
+      },
+      receiptItemsData.map((ri) => ({
+        productId: ri.productId,
+        quantityReceived: ri.quantityReceived,
+        unitCost: ri.unitCost,
+        batchNumber: ri.batchNumber,
+        expiryDate: ri.expiryDate,
+      })),
+    );
+
+    for (const ri of receiptItemsData) {
+      const receiptItem = receipt.items?.find(
+        (item) => item.productId === ri.productId,
+      );
+      const quantityBefore = ri.product.quantityInStock;
+
+      if (ri.quantityReceived > 0 && receiptItem) {
+        await this.lots.createLot({
+          shopId: auth.shopId,
+          productId: ri.productId,
+          sourceType: InventoryLotSourceType.DIRECT_PROCUREMENT,
+          sourceId: receipt.id,
+          purchaseReceiptItemId: receiptItem.id,
+          supplierId: dto.supplierId,
+          unitCost: ri.unitCost,
+          quantity: ri.quantityReceived,
+          batchNumber: ri.batchNumber,
+          expiryDate: ri.expiryDate,
+          receivedAt: dto.receivedAt,
+        });
+
+        await this.products.updateInShop(ri.productId, auth.shopId, {
+          price_buy: ri.unitCost,
+          updated_at: timestamp,
+        });
+      }
+
+      const refreshed = await this.products.findByIdAndShop(ri.productId, auth.shopId);
+      const quantityAfter = refreshed?.quantityInStock ?? quantityBefore + ri.quantityReceived;
+
+      await this.stockMovements.create({
+        shop_id: auth.shopId,
+        product_id: ri.productId,
+        user_id: auth.userId,
+        type: 'restock',
+        quantity_change: ri.quantityReceived,
+        quantity_before: quantityBefore,
+        quantity_after: quantityAfter,
+        reason: `Approvisionnement direct (BR: ${dto.receiptNumber})`,
+        unit_cost: ri.unitCost,
+        created_at: timestamp,
+      });
+
+      await this.logAudit.execute({
+        shopId: auth.shopId,
+        userId: auth.userId,
+        action: AuditAction.STOCK_ADJUSTED,
+        module: AuditModule.PRODUCTS,
+        entityId: ri.productId,
+        entityTable: 'products',
+        oldValue: { quantity_in_stock: quantityBefore },
+        newValue: { quantity_in_stock: quantityAfter, movement_type: 'restock' },
+        reason: `Approvisionnement direct ${dto.receiptNumber}`,
+      });
+    }
+
+    return receipt;
   }
 }
 

@@ -9,6 +9,8 @@ import { CategoryRepository } from '../../domain/repositories/category.repositor
 import { ProductRepository } from '../../domain/repositories/product.repository';
 import { StockMovementRepository } from '../../domain/repositories/stock-movement.repository';
 import { ProductValidationService } from '../../domain/services/product-validation.service';
+import { InventoryLotService } from '../../domain/services/inventory-lot.service';
+import { InventoryLotSourceType } from '../../domain/entities/inventory-lot.entity';
 import {
   ProductAlreadyArchivedException,
   ProductDeletionBlockedException,
@@ -107,6 +109,7 @@ export class CreateProductUseCase {
     private readonly stockMovements: StockMovementRepository,
     private readonly validation: ProductValidationService,
     private readonly configService: ConfigService,
+    private readonly lots: InventoryLotService,
   ) {}
 
   async execute(
@@ -149,6 +152,15 @@ export class CreateProductUseCase {
     });
 
     if (input.initialQuantity > 0) {
+      await this.lots.createLot({
+        shopId: auth.shopId,
+        productId: product.id,
+        sourceType: InventoryLotSourceType.MANUAL_RESTOCK,
+        unitCost: input.priceBuy ?? 0,
+        quantity: input.initialQuantity,
+        receivedAt: timestamp,
+      });
+
       await this.stockMovements.create({
         shop_id: auth.shopId,
         product_id: product.id,

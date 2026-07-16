@@ -31,6 +31,7 @@ import {
   CreatePaymentDto,
   CreatePurchaseOrderDto,
   CreateReceiptDto,
+  CreateDirectGoodsReceiptDto,
   CreateSupplierDto,
   ListPurchaseOrdersQueryDto,
   UpdatePurchaseOrderDto,
@@ -44,6 +45,7 @@ import {
   ListPurchaseOrdersUseCase,
   ListSuppliersUseCase,
   ReceiveItemsUseCase,
+  CreateDirectGoodsReceiptUseCase,
   SendPurchaseOrderUseCase,
   UpdatePurchaseOrderUseCase,
   UpdateSupplierUseCase,
@@ -72,6 +74,7 @@ export class PurchasesController {
     private readonly sendOrder: SendPurchaseOrderUseCase,
     private readonly cancelOrder: CancelPurchaseOrderUseCase,
     private readonly receiveOrder: ReceiveItemsUseCase,
+    private readonly createDirectReceipt: CreateDirectGoodsReceiptUseCase,
     private readonly listInvoices: ListInvoicesUseCase,
     private readonly getInvoice: GetInvoiceDetailsUseCase,
     private readonly createInvoice: CreateSupplierInvoiceUseCase,
@@ -180,6 +183,16 @@ export class PurchasesController {
     @Body() dto: CreateReceiptDto,
   ) {
     return this.receiveOrder.execute(auth, id, dto);
+  }
+
+  @Post('goods-receipts')
+  @RequirePermissions(Permission.PROCUREMENT_RECEIVE)
+  @ApiOperation({ summary: 'Enregistrer un approvisionnement direct (sans commande)' })
+  postDirectGoodsReceipt(
+    @CurrentAuth() auth: AuthContext,
+    @Body() dto: CreateDirectGoodsReceiptDto,
+  ) {
+    return this.createDirectReceipt.execute(auth, dto);
   }
 
   // Invoices & Payments

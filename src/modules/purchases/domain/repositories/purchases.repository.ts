@@ -62,7 +62,9 @@ export interface CreatePurchaseOrderItemData {
 }
 
 export interface CreateReceiptData {
-  purchaseOrderId: number;
+  purchaseOrderId: number | null;
+  supplierId: number;
+  receiptType: 'direct' | 'from_order';
   receiptNumber: string;
   receivedAt: number;
   receivedBy: number;
@@ -70,7 +72,7 @@ export interface CreateReceiptData {
 }
 
 export interface CreateReceiptItemData {
-  purchaseOrderItemId: number;
+  purchaseOrderItemId?: number | null;
   productId: number;
   quantityReceived: number;
   unitCost: number;

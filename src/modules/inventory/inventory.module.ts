@@ -24,15 +24,23 @@ import {
   AdjustProductStockUseCase,
   ListProductStockMovementsUseCase,
 } from './application/use-cases/stock.use-cases';
+import {
+  ListInventoryLotsUseCase,
+  ListProductInventoryLotsUseCase,
+} from './application/use-cases/inventory-lot.use-cases';
 import { CategoryRepository } from './domain/repositories/category.repository';
 import { ProductRepository } from './domain/repositories/product.repository';
 import { StockMovementRepository } from './domain/repositories/stock-movement.repository';
+import { InventoryLotRepository } from './domain/repositories/inventory-lot.repository';
 import { ProductValidationService } from './domain/services/product-validation.service';
+import { InventoryLotService } from './domain/services/inventory-lot.service';
 import { SupabaseCategoryRepository } from './infrastructure/repositories/category.repository';
 import { SupabaseProductRepository } from './infrastructure/repositories/product.repository';
 import { SupabaseStockMovementRepository } from './infrastructure/repositories/stock-movement.repository';
+import { SupabaseInventoryLotRepository } from './infrastructure/repositories/inventory-lot.repository';
 import { CategoriesController } from './presentation/controllers/categories.controller';
 import { ProductsController } from './presentation/controllers/products.controller';
+import { InventoryLotsController } from './presentation/controllers/inventory-lots.controller';
 
 @Module({
   imports: [
@@ -43,12 +51,14 @@ import { ProductsController } from './presentation/controllers/products.controll
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],
-  controllers: [CategoriesController, ProductsController],
+  controllers: [CategoriesController, ProductsController, InventoryLotsController],
   providers: [
     { provide: CategoryRepository, useClass: SupabaseCategoryRepository },
     { provide: ProductRepository, useClass: SupabaseProductRepository },
     { provide: StockMovementRepository, useClass: SupabaseStockMovementRepository },
+    { provide: InventoryLotRepository, useClass: SupabaseInventoryLotRepository },
     ProductValidationService,
+    InventoryLotService,
     ListCategoriesUseCase,
     CreateCategoryUseCase,
     UpdateCategoryUseCase,
@@ -62,7 +72,9 @@ import { ProductsController } from './presentation/controllers/products.controll
     DeleteProductUseCase,
     AdjustProductStockUseCase,
     ListProductStockMovementsUseCase,
+    ListInventoryLotsUseCase,
+    ListProductInventoryLotsUseCase,
   ],
-  exports: [ProductRepository, CategoryRepository, StockMovementRepository],
+  exports: [ProductRepository, CategoryRepository, StockMovementRepository, InventoryLotService],
 })
 export class InventoryModule {}

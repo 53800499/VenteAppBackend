@@ -7,6 +7,8 @@ import { StockMovementType } from '../../domain/entities/stock-movement.entity';
 import { ProductRepository } from '../../domain/repositories/product.repository';
 import { StockMovementRepository } from '../../domain/repositories/stock-movement.repository';
 import { ProductValidationService } from '../../domain/services/product-validation.service';
+import { InventoryLotService } from '../../domain/services/inventory-lot.service';
+import { InventoryLotSourceType } from '../../domain/entities/inventory-lot.entity';
 import { ProductNotFoundException } from '../../exceptions/inventory.exceptions';
 import { StockAdjustmentTypeDto } from '../dto/product.dto';
 
@@ -19,6 +21,7 @@ export class AdjustProductStockUseCase {
     private readonly stockMovements: StockMovementRepository,
     private readonly validation: ProductValidationService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly lots: InventoryLotService,
   ) {}
 
   async execute(
@@ -44,7 +47,7 @@ export class AdjustProductStockUseCase {
     }
 
     const movementType = input.type as StockMovementType;
-    const { quantityBefore, quantityAfter } = this.validation.validateStockAdjustment(
+    const { quantityBefore } = this.validation.validateStockAdjustment(
       movementType,
       product.quantityInStock,
       input.quantityChange,
@@ -52,10 +55,37 @@ export class AdjustProductStockUseCase {
     );
 
     const timestamp = nowMs();
+
+    if (input.quantityChange > 0) {
+      const unitCost = input.unitCost ?? product.priceBuy ?? 0;
+      await this.lots.createLot({
+        shopId: auth.shopId,
+        productId,
+        sourceType: InventoryLotSourceType.MANUAL_RESTOCK,
+        unitCost,
+        quantity: input.quantityChange,
+        receivedAt: timestamp,
+      });
+      if (input.unitCost != null) {
+        await this.products.updateInShop(productId, auth.shopId, {
+          price_buy: input.unitCost,
+          updated_at: timestamp,
+        });
+      }
+    } else if (input.quantityChange < 0) {
+      await this.lots.allocateFifo({
+        shopId: auth.shopId,
+        productId,
+        quantity: -input.quantityChange,
+      });
+    }
+
+    const refreshed = await this.products.findByIdAndShop(productId, auth.shopId);
+    const quantityAfter = refreshed?.quantityInStock ?? quantityBefore + input.quantityChange;
+
     await this.products.updateInShop(productId, auth.shopId, {
-      quantity_in_stock: quantityAfter,
-      updated_at: timestamp,
       version: product.version + 1,
+      updated_at: timestamp,
     });
 
     const movement = await this.stockMovements.create({
