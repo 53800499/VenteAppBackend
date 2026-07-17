@@ -30,7 +30,7 @@ export class GetLockScreenUseCase {
     if (!shop) throw new NotFoundException(`Boutique ${query.shopId} introuvable.`);
 
     const settings = (await this.settings.findByShopId(query.shopId)) ?? this.settings.getDefault(query.shopId);
-    const users = await this.users.findActiveSummariesByShop(query.shopId);
+    const users = await this.resolveLockScreenUsers(query.shopId);
 
     const response = {
       shopId: shop.id,
@@ -41,5 +41,41 @@ export class GetLockScreenUseCase {
 
     this.cache.set(cacheKey, response, this.cacheTtlMs);
     return response;
+  }
+
+  private async resolveLockScreenUsers(shopId: number) {
+    const users = await this.users.findActiveSummariesByShop(shopId);
+    if (users.length > 0) return users;
+
+    const shop = await this.shops.findShopById(shopId);
+    if (!shop) return users;
+
+    const owner = await this.resolveLockScreenOwner(shop);
+    if (!owner) return users;
+
+    return [
+      {
+        id: owner.id,
+        name: owner.name,
+        role: owner.role,
+        biometricEnabled: owner.biometricEnabled,
+      },
+    ];
+  }
+
+  private async resolveLockScreenOwner(
+    shop: NonNullable<Awaited<ReturnType<ShopRepository['findShopById']>>>,
+  ) {
+    if (shop.ownerUserId) {
+      const owner = await this.users.findById(shop.ownerUserId);
+      if (owner?.isActive) return owner;
+    }
+
+    if (shop.parentShopId) {
+      const parent = await this.shops.findShopById(shop.parentShopId);
+      if (parent) return this.resolveLockScreenOwner(parent);
+    }
+
+    return null;
   }
 }

@@ -63,14 +63,20 @@ export class LoginWithPinUseCase {
     }
 
     const loginAt = nowMs();
-    await this.users.updateInShop(user.id, command.shopId, {
+    const loginPatch = {
       failed_attempts: 0,
       locked_until: null,
       lockout_count: 0,
       last_login_at: loginAt,
       updated_at: loginAt,
       version: user.version + 1,
-    });
+    };
+    const assignedToShop = await this.users.findByIdAndShop(user.id, command.shopId);
+    if (assignedToShop) {
+      await this.users.updateInShop(user.id, command.shopId, loginPatch);
+    } else {
+      await this.users.updateById(user.id, loginPatch);
+    }
 
     const activeUser = { ...user, lastLoginAt: loginAt };
     const { session, tokens } = await this.authTokenService.bootstrapSession(activeUser, settings.shopId, settings, {
@@ -104,7 +110,12 @@ export class LoginWithPinUseCase {
       version: user.version,
     });
 
-    await this.users.updateInShop(user.id, shopId, result.update);
+    const assignedToShop = await this.users.findByIdAndShop(user.id, shopId);
+    if (assignedToShop) {
+      await this.users.updateInShop(user.id, shopId, result.update);
+    } else {
+      await this.users.updateById(user.id, result.update);
+    }
 
     if (result.lockoutTriggered) {
       const lockoutDuration = this.configService.get<number>('auth.lockoutDurationMs', 900_000);
