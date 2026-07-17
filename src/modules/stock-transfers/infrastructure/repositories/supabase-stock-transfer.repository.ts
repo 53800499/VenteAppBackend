@@ -50,6 +50,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       )
       .eq('destination_shop_id', destinationShopId)
       .in('status', [
+        StockTransferStatus.VALIDATED,
         StockTransferStatus.PARTIALLY_SHIPPED,
         StockTransferStatus.SHIPPED,
         StockTransferStatus.PARTIALLY_RECEIVED,
