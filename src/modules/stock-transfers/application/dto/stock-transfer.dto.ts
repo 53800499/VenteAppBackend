@@ -59,6 +59,29 @@ export class CreateStockTransferDto {
   items!: CreateStockTransferItemDto[];
 }
 
+export class ReceiveTransferProductSetupDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  priceSell!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  productServerId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  priceBuy?: number;
+}
+
 export class ReceiveStockTransferItemDto {
   @ApiProperty()
   @IsInt()
@@ -69,6 +92,12 @@ export class ReceiveStockTransferItemDto {
   @IsInt()
   @Min(1)
   quantityReceived!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReceiveTransferProductSetupDto)
+  productSetup?: ReceiveTransferProductSetupDto;
 }
 
 export class ReceiveStockTransferDto {

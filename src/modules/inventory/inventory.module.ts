@@ -81,6 +81,7 @@ import { InventoryLotsController } from './presentation/controllers/inventory-lo
     StockMovementRepository,
     InventoryLotRepository,
     InventoryLotService,
+    ProductValidationService,
   ],
 })
 export class InventoryModule {}

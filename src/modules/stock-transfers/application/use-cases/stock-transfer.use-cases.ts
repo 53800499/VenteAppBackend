@@ -11,13 +11,17 @@ import {
 } from '../../../inventory/domain/entities/inventory-lot.entity';
 import { InventoryLotRepository } from '../../../inventory/domain/repositories/inventory-lot.repository';
 import { ProductRepository } from '../../../inventory/domain/repositories/product.repository';
+import { CategoryRepository } from '../../../inventory/domain/repositories/category.repository';
 import { StockMovementRepository } from '../../../inventory/domain/repositories/stock-movement.repository';
 import { InventoryLotService } from '../../../inventory/domain/services/inventory-lot.service';
+import { ProductValidationService } from '../../../inventory/domain/services/product-validation.service';
+import { ConfigService } from '@nestjs/config';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
 import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import {
   CreateStockTransferDto,
   ReceiveStockTransferDto,
+  ReceiveTransferProductSetupDto,
   ShipStockTransferDto,
 } from '../dto/stock-transfer.dto';
 import {
@@ -438,12 +442,17 @@ export class ShipTransferUseCase {
 
 @Injectable()
 export class ReceiveTransferUseCase {
+  private static readonly importCategoryName = 'Transferts inter-boutiques';
+
   constructor(
     private readonly repo: StockTransferRepository,
     private readonly products: ProductRepository,
+    private readonly categories: CategoryRepository,
     private readonly lots: InventoryLotService,
     private readonly lotRepo: InventoryLotRepository,
     private readonly stockMovements: StockMovementRepository,
+    private readonly validation: ProductValidationService,
+    private readonly configService: ConfigService,
   ) {}
 
   async execute(auth: AuthContext, id: number, dto: ReceiveStockTransferDto) {
@@ -466,6 +475,11 @@ export class ReceiveTransferUseCase {
 
     const timestamp = nowMs();
     const quantities = new Map(dto.items.map((i) => [i.itemId, i.quantityReceived]));
+    const productSetups = new Map(
+      dto.items
+        .filter((item) => item.productSetup != null)
+        .map((item) => [item.itemId, item.productSetup!]),
+    );
 
     for (const item of transfer.items) {
       const toReceive = quantities.get(item.id);
@@ -484,6 +498,12 @@ export class ReceiveTransferUseCase {
           auth.shopId,
           item.productServerId,
         );
+      }
+      if (destProductId == null) {
+        const setup = productSetups.get(item.id);
+        if (setup) {
+          destProductId = await this.createDestinationProduct(auth, setup);
+        }
       }
       if (destProductId == null) {
         throw new BadRequestException(
@@ -576,6 +596,64 @@ export class ReceiveTransferUseCase {
 
     const updated = await this.repo.findById(id);
     return toTransferResponse(updated!);
+  }
+
+  private async resolveImportCategoryId(shopId: number): Promise<number> {
+    const categories = await this.categories.findAllByShop(shopId, true);
+    const existing = categories.find(
+      (category) => category.name === ReceiveTransferUseCase.importCategoryName,
+    );
+    if (existing) return existing.id;
+    if (categories.length > 0) return categories[0].id;
+
+    const timestamp = nowMs();
+    const created = await this.categories.create({
+      shop_id: shopId,
+      name: ReceiveTransferUseCase.importCategoryName,
+      description: 'Produits créés à la réception d\'un transfert',
+      sort_order: 999,
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+    return created.id;
+  }
+
+  private async createDestinationProduct(
+    auth: AuthContext,
+    setup: ReceiveTransferProductSetupDto,
+  ): Promise<number> {
+    this.validation.validateName(setup.name);
+    this.validation.validatePrices({
+      priceSell: setup.priceSell,
+      priceBuy: setup.priceBuy,
+    });
+
+    const categoryId = await this.resolveImportCategoryId(auth.shopId);
+    const defaultThreshold = this.configService.get<number>(
+      'dashboard.defaultAlertThreshold',
+      5,
+    );
+    const timestamp = nowMs();
+
+    const product = await this.products.create({
+      shop_id: auth.shopId,
+      category_id: categoryId,
+      name: setup.name.trim(),
+      quantity_in_stock: 0,
+      alert_threshold: defaultThreshold,
+      price_buy: setup.priceBuy ?? null,
+      price_sell: setup.priceSell,
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
+
+    if (setup.productServerId?.trim()) {
+      await this.products.updateInShop(product.id, auth.shopId, {
+        server_id: setup.productServerId.trim(),
+      });
+    }
+
+    return product.id;
   }
 }
 
