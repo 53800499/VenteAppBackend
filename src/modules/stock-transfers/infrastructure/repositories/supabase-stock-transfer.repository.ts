@@ -3,8 +3,14 @@ import { SupabaseService } from '../../../../infrastructure/supabase/supabase.se
 import { nowMs } from '../../../../shared/utils/time.util';
 import {
   StockTransfer,
+  StockTransferDiscrepancy,
+  StockTransferDiscrepancyReason,
+  StockTransferDiscrepancyResolution,
+  StockTransferEvent,
   StockTransferItem,
   StockTransferLotLine,
+  StockTransferReceipt,
+  StockTransferReceiptItem,
   StockTransferShipment,
   StockTransferStatus,
   StockTransferStatusValue,
@@ -102,7 +108,14 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       items.push(this.mapItem(itemRow, (lotRows ?? []).map(this.mapLotLine)));
     }
 
-    return this.mapTransfer(row, items, await this.listShipments(id));
+    return this.mapTransfer(
+      row,
+      items,
+      await this.listShipments(id),
+      await this.listReceipts(id),
+      await this.listEvents(id),
+      await this.listDiscrepancies(id),
+    );
   }
 
   async createTransfer(
@@ -179,6 +192,8 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         shipped_at: patch.shipped_at ?? undefined,
         received_by: patch.received_by ?? undefined,
         received_at: patch.received_at ?? undefined,
+        closed_by: patch.closed_by ?? undefined,
+        closed_at: patch.closed_at ?? undefined,
         sync_status: 'synced',
       })
       .eq('id', id);
@@ -189,8 +204,11 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
   async createShipment(
     transferId: number,
     data: {
+      reference: string;
       label: string;
       notes?: string | null;
+      driverName?: string | null;
+      vehiclePlate?: string | null;
       shippedBy: number;
       shippedAt: number;
     },
@@ -199,8 +217,11 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       .from('stock_transfer_shipments')
       .insert({
         transfer_id: transferId,
+        reference: data.reference,
         label: data.label,
         notes: data.notes ?? null,
+        driver_name: data.driverName ?? null,
+        vehicle_plate: data.vehiclePlate ?? null,
         shipped_by: data.shippedBy,
         shipped_at: data.shippedAt,
       })
@@ -224,8 +245,11 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     return (data ?? []).map((row) => ({
       id: row.id as number,
       transferId: row.transfer_id as number,
+      reference: (row.reference as string) ?? '',
       label: row.label as string,
       notes: (row.notes as string | null) ?? null,
+      driverName: (row.driver_name as string | null) ?? null,
+      vehiclePlate: (row.vehicle_plate as string | null) ?? null,
       shippedBy: row.shipped_by as number,
       shippedAt: row.shipped_at as number,
     }));
@@ -411,16 +435,273 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     return data?.id ?? null;
   }
 
+  async insertEvent(data: {
+    transferId: number;
+    shopId: number;
+    eventType: string;
+    actorUserId: number;
+    notes?: string | null;
+    payload?: Record<string, unknown> | null;
+    createdAt: number;
+  }): Promise<number> {
+    const { data: row, error } = await this.supabase.db
+      .from('stock_transfer_events')
+      .insert({
+        transfer_id: data.transferId,
+        shop_id: data.shopId,
+        event_type: data.eventType,
+        actor_user_id: data.actorUserId,
+        notes: data.notes ?? null,
+        payload: data.payload ?? null,
+        created_at: data.createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (error || !row) {
+      throw new BadRequestException(error?.message ?? 'Impossible d\'enregistrer l\'événement.');
+    }
+    return row.id as number;
+  }
+
+  async listEvents(transferId: number) {
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_events')
+      .select('*')
+      .eq('transfer_id', transferId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new BadRequestException(error.message);
+    return (data ?? []).map((row) => ({
+      id: row.id as number,
+      transferId: row.transfer_id as number,
+      shopId: row.shop_id as number,
+      eventType: row.event_type as string,
+      actorUserId: row.actor_user_id as number,
+      notes: (row.notes as string | null) ?? null,
+      payload: (row.payload as Record<string, unknown> | null) ?? null,
+      createdAt: row.created_at as number,
+    }));
+  }
+
+  async insertDiscrepancy(data: {
+    transferId: number;
+    transferItemId: number;
+    quantity: number;
+    reason: string;
+    resolution: string;
+    notes?: string | null;
+    resolvedBy: number;
+    resolvedAt: number;
+    createdAt: number;
+  }): Promise<number> {
+    const { data: row, error } = await this.supabase.db
+      .from('stock_transfer_discrepancies')
+      .insert({
+        transfer_id: data.transferId,
+        transfer_item_id: data.transferItemId,
+        quantity: data.quantity,
+        reason: data.reason,
+        resolution: data.resolution,
+        notes: data.notes ?? null,
+        resolved_by: data.resolvedBy,
+        resolved_at: data.resolvedAt,
+        created_at: data.createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (error || !row) {
+      throw new BadRequestException(error?.message ?? 'Impossible d\'enregistrer l\'écart.');
+    }
+    return row.id as number;
+  }
+
+  async listDiscrepancies(transferId: number) {
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_discrepancies')
+      .select('*')
+      .eq('transfer_id', transferId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new BadRequestException(error.message);
+    return (data ?? []).map((row) => ({
+      id: row.id as number,
+      transferId: row.transfer_id as number,
+      transferItemId: row.transfer_item_id as number,
+      quantity: row.quantity as number,
+      reason: row.reason as string,
+      resolution: row.resolution as string,
+      notes: (row.notes as string | null) ?? null,
+      resolvedBy: row.resolved_by as number,
+      resolvedAt: row.resolved_at as number,
+      createdAt: row.created_at as number,
+    }));
+  }
+
+  async countReceipts(transferId: number): Promise<number> {
+    const { count, error } = await this.supabase.db
+      .from('stock_transfer_receipts')
+      .select('id', { count: 'exact', head: true })
+      .eq('transfer_id', transferId);
+
+    if (error) throw new BadRequestException(error.message);
+    return count ?? 0;
+  }
+
+  async createReceipt(data: {
+    transferId: number;
+    shipmentId?: number | null;
+    reference: string;
+    notes?: string | null;
+    receivedBy: number;
+    receivedAt: number;
+    createdAt: number;
+  }): Promise<number> {
+    const { data: row, error } = await this.supabase.db
+      .from('stock_transfer_receipts')
+      .insert({
+        transfer_id: data.transferId,
+        shipment_id: data.shipmentId ?? null,
+        reference: data.reference,
+        notes: data.notes ?? null,
+        received_by: data.receivedBy,
+        received_at: data.receivedAt,
+        created_at: data.createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (error || !row) {
+      throw new BadRequestException(error?.message ?? 'Impossible d\'enregistrer la réception.');
+    }
+    return row.id as number;
+  }
+
+  async insertReceiptItem(data: {
+    receiptId: number;
+    transferItemId: number;
+    quantityReceived: number;
+    createdAt: number;
+  }): Promise<number> {
+    const { data: row, error } = await this.supabase.db
+      .from('stock_transfer_receipt_items')
+      .insert({
+        receipt_id: data.receiptId,
+        transfer_item_id: data.transferItemId,
+        quantity_received: data.quantityReceived,
+        created_at: data.createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (error || !row) {
+      throw new BadRequestException(error?.message ?? 'Impossible d\'enregistrer la ligne de réception.');
+    }
+    return row.id as number;
+  }
+
+  async listReceipts(transferId: number) {
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_receipts')
+      .select('*')
+      .eq('transfer_id', transferId)
+      .order('received_at', { ascending: false });
+
+    if (error) throw new BadRequestException(error.message);
+
+    const receipts: {
+      id: number;
+      transferId: number;
+      shipmentId: number | null;
+      reference: string;
+      notes: string | null;
+      receivedBy: number;
+      receivedAt: number;
+      items: {
+        id: number;
+        receiptId: number;
+        transferItemId: number;
+        quantityReceived: number;
+      }[];
+    }[] = [];
+    for (const row of data ?? []) {
+      const { data: itemRows, error: itemErr } = await this.supabase.db
+        .from('stock_transfer_receipt_items')
+        .select('*')
+        .eq('receipt_id', row.id);
+
+      if (itemErr) throw new BadRequestException(itemErr.message);
+
+      receipts.push({
+        id: row.id as number,
+        transferId: row.transfer_id as number,
+        shipmentId: (row.shipment_id as number | null) ?? null,
+        reference: row.reference as string,
+        notes: (row.notes as string | null) ?? null,
+        receivedBy: row.received_by as number,
+        receivedAt: row.received_at as number,
+        items: (itemRows ?? []).map((itemRow) => ({
+          id: itemRow.id as number,
+          receiptId: itemRow.receipt_id as number,
+          transferItemId: itemRow.transfer_item_id as number,
+          quantityReceived: itemRow.quantity_received as number,
+        })),
+      });
+    }
+    return receipts;
+  }
+
   private mapTransfer(
     row: Record<string, any>,
     items: StockTransferItem[] = [],
     shipments: {
       id: number;
       transferId: number;
+      reference: string;
       label: string;
       notes: string | null;
+      driverName: string | null;
+      vehiclePlate: string | null;
       shippedBy: number;
       shippedAt: number;
+    }[] = [],
+    receipts: {
+      id: number;
+      transferId: number;
+      shipmentId: number | null;
+      reference: string;
+      notes: string | null;
+      receivedBy: number;
+      receivedAt: number;
+      items: {
+        id: number;
+        receiptId: number;
+        transferItemId: number;
+        quantityReceived: number;
+      }[];
+    }[] = [],
+    events: {
+      id: number;
+      transferId: number;
+      shopId: number;
+      eventType: string;
+      actorUserId: number;
+      notes: string | null;
+      payload: Record<string, unknown> | null;
+      createdAt: number;
+    }[] = [],
+    discrepancies: {
+      id: number;
+      transferId: number;
+      transferItemId: number;
+      quantity: number;
+      reason: string;
+      resolution: string;
+      notes: string | null;
+      resolvedBy: number;
+      resolvedAt: number;
+      createdAt: number;
     }[] = [],
   ) {
     return new StockTransfer(
@@ -436,11 +717,13 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       row.validated_by ?? null,
       row.shipped_by ?? null,
       row.received_by ?? null,
+      row.closed_by ?? null,
       row.created_at,
       row.updated_at,
       row.validated_at ?? null,
       row.shipped_at ?? null,
       row.received_at ?? null,
+      row.closed_at ?? null,
       row.version ?? 1,
       row.transfer_type ?? 'outbound',
       row.parent_transfer_id ?? null,
@@ -450,10 +733,62 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
           new StockTransferShipment(
             s.id,
             s.transferId,
+            s.reference,
             s.label,
             s.notes,
+            s.driverName,
+            s.vehiclePlate,
             s.shippedBy,
             s.shippedAt,
+          ),
+      ),
+      receipts.map(
+        (receipt) =>
+          new StockTransferReceipt(
+            receipt.id,
+            receipt.transferId,
+            receipt.shipmentId,
+            receipt.reference,
+            receipt.notes,
+            receipt.receivedBy,
+            receipt.receivedAt,
+            receipt.items.map(
+              (item) =>
+                new StockTransferReceiptItem(
+                  item.id,
+                  item.receiptId,
+                  item.transferItemId,
+                  item.quantityReceived,
+                ),
+            ),
+          ),
+      ),
+      events.map(
+        (event) =>
+          new StockTransferEvent(
+            event.id,
+            event.transferId,
+            event.shopId,
+            event.eventType,
+            event.actorUserId,
+            event.notes,
+            event.payload,
+            event.createdAt,
+          ),
+      ),
+      discrepancies.map(
+        (row) =>
+          new StockTransferDiscrepancy(
+            row.id,
+            row.transferId,
+            row.transferItemId,
+            row.quantity,
+            row.reason as StockTransferDiscrepancyReason,
+            row.resolution as StockTransferDiscrepancyResolution,
+            row.notes,
+            row.resolvedBy,
+            row.resolvedAt,
+            row.createdAt,
           ),
       ),
     );

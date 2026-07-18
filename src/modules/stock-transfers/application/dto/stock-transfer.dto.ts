@@ -101,6 +101,17 @@ export class ReceiveStockTransferItemDto {
 }
 
 export class ReceiveStockTransferDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  shipmentId?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
   @ApiProperty({ type: [ReceiveStockTransferItemDto] })
   @IsArray()
   @ArrayMinSize(1)
@@ -132,10 +143,54 @@ export class ShipStockTransferDto {
   @IsString()
   notes?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  driverName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  vehiclePlate?: string;
+
   @ApiProperty({ type: [ShipStockTransferItemDto] })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ShipStockTransferItemDto)
   items!: ShipStockTransferItemDto[];
+}
+
+export class ResolveStockTransferDiscrepancyDto {
+  @ApiProperty()
+  @IsInt()
+  @IsPositive()
+  itemId!: number;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+
+  @ApiProperty({ enum: ['loss', 'breakage', 'theft', 'other'] })
+  @IsString()
+  @IsNotEmpty()
+  reason!: 'loss' | 'breakage' | 'theft' | 'other';
+
+  @ApiProperty({ enum: ['write_off', 'restock_source'] })
+  @IsString()
+  @IsNotEmpty()
+  resolution!: 'write_off' | 'restock_source';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class CloseStockTransferDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

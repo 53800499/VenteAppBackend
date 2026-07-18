@@ -25,12 +25,15 @@ import type { AuthContext } from '../../../../shared/interfaces/auth-context.int
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
 import { TenantGuard } from '../../../tenants/tenant.guard';
 import {
+  CloseStockTransferDto,
   CreateStockTransferDto,
   ReceiveStockTransferDto,
+  ResolveStockTransferDiscrepancyDto,
   ShipStockTransferDto,
 } from '../../application/dto/stock-transfer.dto';
 import {
   CancelTransferUseCase,
+  CloseTransferUseCase,
   CreateReturnTransferUseCase,
   CreateTransferUseCase,
   GetTransferDetailsUseCase,
@@ -38,6 +41,7 @@ import {
   ListOutgoingTransfersUseCase,
   NextTransferReferenceUseCase,
   ReceiveTransferUseCase,
+  ResolveTransferDiscrepancyUseCase,
   ShipTransferUseCase,
   ValidateTransferUseCase,
 } from '../../application/use-cases/stock-transfer.use-cases';
@@ -58,6 +62,8 @@ export class StockTransfersController {
     private readonly shipTransfer: ShipTransferUseCase,
     private readonly receiveTransfer: ReceiveTransferUseCase,
     private readonly cancelTransfer: CancelTransferUseCase,
+    private readonly resolveDiscrepancy: ResolveTransferDiscrepancyUseCase,
+    private readonly closeTransfer: CloseTransferUseCase,
     private readonly nextReference: NextTransferReferenceUseCase,
   ) {}
 
@@ -145,5 +151,29 @@ export class StockTransfersController {
   @ApiOperation({ summary: 'Annuler un brouillon' })
   postCancel(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
     return this.cancelTransfer.execute(auth, id);
+  }
+
+  @Post(':id/resolve-discrepancy')
+  @RequirePermissions(Permission.INVENTORY_TRANSFER_CREATE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Résoudre un écart expédié / reçu' })
+  postResolveDiscrepancy(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResolveStockTransferDiscrepancyDto,
+  ) {
+    return this.resolveDiscrepancy.execute(auth, id, dto);
+  }
+
+  @Post(':id/close')
+  @RequirePermissions(Permission.INVENTORY_TRANSFER_CREATE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Clôturer un transfert expédié ou reçu' })
+  postClose(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CloseStockTransferDto,
+  ) {
+    return this.closeTransfer.execute(auth, id, dto);
   }
 }

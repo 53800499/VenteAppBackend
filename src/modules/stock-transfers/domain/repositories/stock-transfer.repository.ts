@@ -61,8 +61,11 @@ export abstract class StockTransferRepository {
   abstract createShipment(
     transferId: number,
     data: {
+      reference: string;
       label: string;
       notes?: string | null;
+      driverName?: string | null;
+      vehiclePlate?: string | null;
       shippedBy: number;
       shippedAt: number;
     },
@@ -100,8 +103,11 @@ export abstract class StockTransferRepository {
     {
       id: number;
       transferId: number;
+      reference: string;
       label: string;
       notes: string | null;
+      driverName: string | null;
+      vehiclePlate: string | null;
       shippedBy: number;
       shippedAt: number;
     }[]
@@ -132,4 +138,91 @@ export abstract class StockTransferRepository {
     shopId: number,
     serverId: string,
   ): Promise<number | null>;
+
+  abstract insertEvent(data: {
+    transferId: number;
+    shopId: number;
+    eventType: string;
+    actorUserId: number;
+    notes?: string | null;
+    payload?: Record<string, unknown> | null;
+    createdAt: number;
+  }): Promise<number>;
+
+  abstract listEvents(transferId: number): Promise<
+    {
+      id: number;
+      transferId: number;
+      shopId: number;
+      eventType: string;
+      actorUserId: number;
+      notes: string | null;
+      payload: Record<string, unknown> | null;
+      createdAt: number;
+    }[]
+  >;
+
+  abstract insertDiscrepancy(data: {
+    transferId: number;
+    transferItemId: number;
+    quantity: number;
+    reason: string;
+    resolution: string;
+    notes?: string | null;
+    resolvedBy: number;
+    resolvedAt: number;
+    createdAt: number;
+  }): Promise<number>;
+
+  abstract listDiscrepancies(transferId: number): Promise<
+    {
+      id: number;
+      transferId: number;
+      transferItemId: number;
+      quantity: number;
+      reason: string;
+      resolution: string;
+      notes: string | null;
+      resolvedBy: number;
+      resolvedAt: number;
+      createdAt: number;
+    }[]
+  >;
+
+  abstract countReceipts(transferId: number): Promise<number>;
+
+  abstract createReceipt(data: {
+    transferId: number;
+    shipmentId?: number | null;
+    reference: string;
+    notes?: string | null;
+    receivedBy: number;
+    receivedAt: number;
+    createdAt: number;
+  }): Promise<number>;
+
+  abstract insertReceiptItem(data: {
+    receiptId: number;
+    transferItemId: number;
+    quantityReceived: number;
+    createdAt: number;
+  }): Promise<number>;
+
+  abstract listReceipts(transferId: number): Promise<
+    {
+      id: number;
+      transferId: number;
+      shipmentId: number | null;
+      reference: string;
+      notes: string | null;
+      receivedBy: number;
+      receivedAt: number;
+      items: {
+        id: number;
+        receiptId: number;
+        transferItemId: number;
+        quantityReceived: number;
+      }[];
+    }[]
+  >;
 }

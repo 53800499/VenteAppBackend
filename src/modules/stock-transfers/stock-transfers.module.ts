@@ -11,6 +11,7 @@ import { SupabaseStockTransferRepository } from './infrastructure/repositories/s
 import { StockTransfersController } from './presentation/controllers/stock-transfers.controller';
 import {
   CancelTransferUseCase,
+  CloseTransferUseCase,
   CreateReturnTransferUseCase,
   CreateTransferUseCase,
   GetTransferDetailsUseCase,
@@ -18,6 +19,7 @@ import {
   ListOutgoingTransfersUseCase,
   NextTransferReferenceUseCase,
   ReceiveTransferUseCase,
+  ResolveTransferDiscrepancyUseCase,
   ShipTransferUseCase,
   ValidateTransferUseCase,
 } from './application/use-cases/stock-transfer.use-cases';
@@ -44,6 +46,8 @@ import {
     ShipTransferUseCase,
     ReceiveTransferUseCase,
     CancelTransferUseCase,
+    CloseTransferUseCase,
+    ResolveTransferDiscrepancyUseCase,
     NextTransferReferenceUseCase,
   ],
   exports: [StockTransferRepository],
