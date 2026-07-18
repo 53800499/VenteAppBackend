@@ -137,7 +137,9 @@ export abstract class StockTransferRepository {
     destinationLotId: number,
   ): Promise<void>;
 
-  abstract nextReference(sourceShopId: number): Promise<string>;
+  abstract nextReference(sourceShopIds: number[]): Promise<string>;
+
+  abstract isReferenceUsed(sourceShopIds: number[], reference: string): Promise<boolean>;
 
   abstract findProductServerId(productId: number, shopId: number): Promise<string | null>;
 

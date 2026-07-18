@@ -171,6 +171,17 @@ function itemOpenDiscrepancyQty(
   return Math.max(0, gap - resolved);
 }
 
+async function resolveCommercialGroupShopIds(
+  shops: ShopRepository,
+  hierarchy: ShopHierarchyService,
+  shopId: number,
+): Promise<number[]> {
+  const currentShop = await shops.findShopById(shopId);
+  if (!currentShop?.ownerUserId) return [shopId];
+  const ownedShops = await shops.findByOwnerUserId(currentShop.ownerUserId);
+  return hierarchy.groupShopIds(ownedShops, shopId);
+}
+
 @Injectable()
 export class ListOutgoingTransfersUseCase {
   constructor(private readonly repo: StockTransferRepository) {}
@@ -228,6 +239,21 @@ export class CreateTransferUseCase {
 
     await this.assertDestinationInGroup(auth.shopId, dto.destinationShopId);
 
+    const groupIds = await resolveCommercialGroupShopIds(
+      this.shops,
+      this.hierarchy,
+      auth.shopId,
+    );
+    const reference = dto.reference.trim();
+    if (!reference) {
+      throw new BadRequestException('Référence obligatoire.');
+    }
+    if (await this.repo.isReferenceUsed(groupIds, reference)) {
+      throw new BadRequestException(
+        `La référence « ${reference} » est déjà utilisée dans votre réseau commercial.`,
+      );
+    }
+
     const items: CreateStockTransferItemData[] = [];
     for (const item of dto.items) {
       const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
@@ -248,7 +274,7 @@ export class CreateTransferUseCase {
     const transfer = await this.repo.createTransfer(
       auth.shopId,
       {
-        reference: dto.reference.trim(),
+        reference,
         destinationShopId: dto.destinationShopId,
         notes: dto.notes ?? null,
         createdBy: auth.userId,
@@ -1474,9 +1500,18 @@ export class CloseTransferUseCase {
 
 @Injectable()
 export class NextTransferReferenceUseCase {
-  constructor(private readonly repo: StockTransferRepository) {}
+  constructor(
+    private readonly repo: StockTransferRepository,
+    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
+  ) {}
 
-  execute(auth: AuthContext) {
-    return this.repo.nextReference(auth.shopId);
+  async execute(auth: AuthContext) {
+    const groupIds = await resolveCommercialGroupShopIds(
+      this.shops,
+      this.hierarchy,
+      auth.shopId,
+    );
+    return this.repo.nextReference(groupIds);
   }
 }

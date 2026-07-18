@@ -437,15 +437,51 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     if (error) throw new BadRequestException(error.message);
   }
 
-  async nextReference(sourceShopId: number): Promise<string> {
-    const { count, error } = await this.supabase.db
+  async nextReference(sourceShopIds: number[]): Promise<string> {
+    if (sourceShopIds.length === 0) {
+      return 'TRF-00001';
+    }
+
+    const { data, error } = await this.supabase.db
       .from('stock_transfers')
-      .select('*', { count: 'exact', head: true })
-      .eq('source_shop_id', sourceShopId);
+      .select('reference')
+      .in('source_shop_id', sourceShopIds);
 
     if (error) throw new BadRequestException(error.message);
-    const seq = (count ?? 0) + 1;
-    return `TRF-${String(seq).padStart(5, '0')}`;
+
+    const maxSeq = this.maxTransferSequence(
+      (data ?? []).map((row) => String(row.reference ?? '')),
+    );
+    return `TRF-${String(maxSeq + 1).padStart(5, '0')}`;
+  }
+
+  async isReferenceUsed(
+    sourceShopIds: number[],
+    reference: string,
+  ): Promise<boolean> {
+    const trimmed = reference.trim();
+    if (sourceShopIds.length === 0 || trimmed.length === 0) return false;
+
+    const { data, error } = await this.supabase.db
+      .from('stock_transfers')
+      .select('id')
+      .in('source_shop_id', sourceShopIds)
+      .eq('reference', trimmed)
+      .limit(1);
+
+    if (error) throw new BadRequestException(error.message);
+    return (data?.length ?? 0) > 0;
+  }
+
+  private maxTransferSequence(references: string[]): number {
+    let maxSeq = 0;
+    for (const reference of references) {
+      const match = /^(?:TRF|RET)-(\d+)$/i.exec(reference.trim());
+      if (!match) continue;
+      const seq = Number.parseInt(match[1], 10);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+    }
+    return maxSeq;
   }
 
   async findProductServerId(productId: number, shopId: number): Promise<string | null> {
