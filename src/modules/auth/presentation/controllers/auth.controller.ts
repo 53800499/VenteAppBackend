@@ -96,6 +96,8 @@ import {
 import { ResetPinWithWhatsappOtpUseCase } from '../../application/use-cases/reset-pin-with-whatsapp.use-case';
 import { CheckSetupAvailableUseCase } from '../../application/use-cases/check-setup-available.use-case';
 import { ValidateSetupOwnerUseCase } from '../../application/use-cases/validate-setup-owner.use-case';
+import { GetIdentityContextUseCase } from '../../../identity/application/use-cases/get-identity-context.use-case';
+import { IdentityContextResponseDto } from '../../../identity/application/dto/identity.dto';
 
 @ApiTags('Authentification')
 @Controller('auth')
@@ -119,6 +121,7 @@ export class AuthController {
     private readonly verifyWhatsappOtp: VerifyWhatsappOtpUseCase,
     private readonly completeWhatsappOtpLogin: CompleteWhatsappOtpLoginUseCase,
     private readonly resetPinWithWhatsappOtp: ResetPinWithWhatsappOtpUseCase,
+    private readonly getIdentityContext: GetIdentityContextUseCase,
     private readonly tenantContext: TenantContextService,
     private readonly tenantDb: TenantDatabaseService,
   ) {}
@@ -341,6 +344,22 @@ export class AuthController {
   @ApiNotFoundResponse({ type: NotFoundErrorDto })
   switchShopHandler(@CurrentAuth() auth: AuthContext, @Body() dto: SwitchShopDto) {
     return this.switchShop.execute(auth, dto.shopId);
+  }
+
+  @Get('identity')
+  @UseGuards(SessionGuard, TenantGuard)
+  @ApiSecurity('bearer')
+  @ApiOperation({
+    summary: 'Contexte identité courant',
+    description: [
+      'Retourne l\'entreprise, le rôle et les boutiques accessibles pour la session active.',
+      'Modèle Phase 2 : Organization → Membership → ShopAccess → ActiveShop.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ type: IdentityContextResponseDto })
+  @ApiNotFoundResponse({ type: NotFoundErrorDto })
+  identityHandler(@CurrentAuth() auth: AuthContext) {
+    return this.getIdentityContext.execute(auth);
   }
 
   @Get('devices')

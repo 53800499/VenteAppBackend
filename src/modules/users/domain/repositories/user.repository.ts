@@ -19,4 +19,5 @@ export abstract class UserRepository {
   abstract updateInShop(id: number, shopId: number, data: Record<string, unknown>): Promise<void>;
   abstract updateById(id: number, data: Record<string, unknown>): Promise<void>;
   abstract findActiveByPhone(phone: string): Promise<User[]>;
+  abstract findPhoneById(id: number): Promise<string | null>;
 }

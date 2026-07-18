@@ -76,7 +76,7 @@ export class ShopMembershipItemDto {
   @ApiProperty({ example: 1 })
   userId: number;
 
-  @ApiProperty({ example: 2 })
+  @ApiProperty({ example: 2, description: 'Boutique d\'entrée pour la connexion' })
   shopId: number;
 
   @ApiProperty({ example: 'Boutique Akpakpa' })
@@ -90,6 +90,31 @@ export class ShopMembershipItemDto {
 
   @ApiProperty({ example: true })
   isDefault: boolean;
+
+  @ApiProperty({ enum: ['shop', 'organization'], example: 'organization' })
+  scopeType: 'shop' | 'organization';
+
+  @ApiProperty({
+    required: false,
+    example: 'SOGEMAT',
+    description: 'Nom du groupe / entreprise pour un patron multi-boutiques',
+  })
+  organizationName?: string;
+
+  @ApiProperty({
+    required: false,
+    example: 4,
+    description: 'Nombre de boutiques accessibles dans ce membership',
+  })
+  shopCount?: number;
+
+  @ApiProperty({
+    required: false,
+    type: [Number],
+    example: [1, 2, 3, 4],
+    description: 'IDs serveur des boutiques accessibles',
+  })
+  accessibleShopIds?: number[];
 }
 
 export class RequestWhatsappOtpDataDto {

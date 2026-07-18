@@ -5,6 +5,7 @@ import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { SessionGuard } from '../../shared/guards/session.guard';
 import { AuditPersistenceModule } from '../audit/audit-persistence.module';
+import { IdentityModule } from '../identity/identity.module';
 import { ShopsModule } from '../shops/shops.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -44,6 +45,7 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
   imports: [
     CoreModule,
     AuthorizationGuardsModule,
+    forwardRef(() => IdentityModule),
     forwardRef(() => UsersModule),
     forwardRef(() => ShopsModule),
     AuditPersistenceModule,

@@ -161,4 +161,15 @@ export class SupabaseUserRepository extends UserRepository {
     if (error) throw new BadRequestException(error.message);
     return (data ?? []).map((row) => UserMapper.toDomain(row as UserRow));
   }
+
+  async findPhoneById(id: number): Promise<string | null> {
+    const { data, error } = await this.supabase.db
+      .from('users')
+      .select('phone')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw new BadRequestException(error.message);
+    return (data?.phone as string | null) ?? null;
+  }
 }

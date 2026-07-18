@@ -3,6 +3,7 @@ import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
+import { IdentityModule } from '../identity/identity.module';
 import { RbacPersistenceModule } from '../rbac/rbac-persistence.module';
 import { ShopsModule } from '../shops/shops.module';
 import {
@@ -25,6 +26,7 @@ import { UsersController } from './presentation/controllers/users.controller';
   imports: [
     CoreModule,
     RbacPersistenceModule,
+    forwardRef(() => IdentityModule),
     forwardRef(() => AuthModule),
     forwardRef(() => ShopsModule),
     AuditPersistenceModule,

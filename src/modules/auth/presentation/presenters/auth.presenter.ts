@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PermissionService } from '../../../../core/security/permission.service';
+import { IdentityRepository } from '../../../identity/domain/repositories/identity.repository';
 import { UserSession } from '../../domain/entities/user-session.entity';
 import { IssuedTokenPair } from '../../domain/interfaces/jwt-payload.interface';
 import { User } from '../../../users/domain/entities/user.entity';
@@ -22,7 +23,10 @@ interface TokenRefreshInput {
 
 @Injectable()
 export class AuthPresenter {
-  constructor(private readonly permissionService: PermissionService) {}
+  constructor(
+    private readonly permissionService: PermissionService,
+    private readonly identity: IdentityRepository,
+  ) {}
 
   async presentLoginSuccess(input: LoginPresentationInput) {
     return this.buildAuthPayload(input, input.tokens);
@@ -36,12 +40,15 @@ export class AuthPresenter {
   }
 
   async presentTokenRefresh(input: TokenRefreshInput) {
-    const roleLabel = await this.permissionService.getRoleLabel(input.user.role);
+    const effectiveRole =
+      (await this.identity.resolveEffectiveRole(input.user.id, input.user.shopId)) ??
+      input.user.role;
+    const roleLabel = await this.permissionService.getRoleLabel(effectiveRole);
     return {
       ...this.mapTokens(input.tokens),
       user: {
         id: input.user.id,
-        role: input.user.role,
+        role: effectiveRole,
         roleLabel,
         shopId: input.user.shopId,
       },
@@ -50,19 +57,22 @@ export class AuthPresenter {
   }
 
   private async buildAuthPayload(input: LoginPresentationInput, tokens: IssuedTokenPair) {
+    const effectiveRole =
+      (await this.identity.resolveEffectiveRole(input.user.id, input.shopId)) ??
+      input.user.role;
     const permissions = await this.permissionService.resolveForUser({
       userId: input.user.id,
-      role: input.user.role,
-      shopId: input.user.shopId,
+      role: effectiveRole,
+      shopId: input.shopId,
     });
-    const roleLabel = await this.permissionService.getRoleLabel(input.user.role);
+    const roleLabel = await this.permissionService.getRoleLabel(effectiveRole);
 
     return {
       ...this.mapTokens(tokens),
       user: {
         id: input.user.id,
         name: input.user.name,
-        role: input.user.role,
+        role: effectiveRole,
         roleLabel,
         shopId: input.user.shopId,
         biometricEnabled: input.user.biometricEnabled,

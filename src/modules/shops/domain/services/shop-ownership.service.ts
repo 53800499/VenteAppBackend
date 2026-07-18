@@ -6,6 +6,7 @@ import { ShopHierarchyService } from './shop-hierarchy.service';
 import { ShopInactiveException } from '../../exceptions/shop.exceptions';
 
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
+import { IdentityRepository } from '../../../identity/domain/repositories/identity.repository';
 
 @Injectable()
 export class ShopOwnershipService {
@@ -13,6 +14,7 @@ export class ShopOwnershipService {
     private readonly shops: ShopRepository,
     private readonly users: UserRepository,
     private readonly hierarchy: ShopHierarchyService,
+    private readonly identity: IdentityRepository,
   ) {}
 
   async assertOwnerAccess(userId: number, role: string, shopId: number): Promise<Shop> {
@@ -57,6 +59,15 @@ export class ShopOwnershipService {
         throw new NotFoundException('Boutique introuvable ou accès refusé.');
       }
       if (!shop.isActive) {
+        throw new ShopInactiveException();
+      }
+      return target;
+    }
+
+    const hasAccess = await this.identity.userHasShopAccess(userId, target);
+    if (hasAccess) {
+      const shop = await this.shops.findShopById(target);
+      if (!shop?.isActive) {
         throw new ShopInactiveException();
       }
       return target;

@@ -12,7 +12,9 @@ import { LogAuditUseCase } from '../../../audit/application/use-cases/log-audit.
 import { RbacRepository } from '../../../rbac/domain/repositories/rbac.repository';
 import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
 import { ShopOwnershipService } from '../../../shops/domain/services/shop-ownership.service';
+import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
 import { ShopInactiveException } from '../../../shops/exceptions/shop.exceptions';
+import { IdentityProvisioningService } from '../../../identity/domain/services/identity-provisioning.service';
 import { UserAccessPolicy } from '../../domain/policies/user-access.policy';
 import { UserRepository } from '../../domain/repositories/user.repository';
 
@@ -62,9 +64,12 @@ export class AssignUserShopUseCase {
     private readonly users: UserRepository,
     private readonly userAccess: UserAccessPolicy,
     private readonly shopOwnership: ShopOwnershipService,
+    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
     private readonly rbac: RbacRepository,
     private readonly permissionService: PermissionService,
     private readonly logAudit: LogAuditUseCase,
+    private readonly identityProvisioning: IdentityProvisioningService,
   ) {}
 
   async execute(
@@ -135,6 +140,22 @@ export class AssignUserShopUseCase {
       oldValue: { shop_id: previousShopId },
       newValue: { shop_id: newShopId },
       reason: reason ?? 'Réaffectation boutique',
+    });
+
+    const owned = targetShop.ownerUserId
+      ? await this.shops.findByOwnerUserId(targetShop.ownerUserId)
+      : [targetShop];
+    const rootShopId = this.hierarchy.resolveRootShopId(owned, newShopId);
+    const rootShop = owned.find((shop) => shop.id === rootShopId) ?? targetShop;
+    const phone = await this.users.findPhoneById(target.id);
+    await this.identityProvisioning.provisionStaffUser({
+      phone,
+      displayName: target.name,
+      userId: target.id,
+      rootShopId,
+      organizationName: rootShop.name,
+      shopId: newShopId,
+      role: target.role,
     });
 
     return {

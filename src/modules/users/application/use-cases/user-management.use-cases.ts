@@ -20,6 +20,9 @@ import { RoleChangePolicy } from '../../../rbac/domain/policies/role-change.poli
 import { User } from '../../domain/entities/user.entity';
 import { UserRepository } from '../../domain/repositories/user.repository';
 import { RoleAssignmentValidator } from '../../domain/services/role-assignment.validator';
+import { ShopRepository } from '../../../shops/domain/repositories/shop.repository';
+import { ShopHierarchyService } from '../../../shops/domain/services/shop-hierarchy.service';
+import { IdentityProvisioningService } from '../../../identity/domain/services/identity-provisioning.service';
 
 @Injectable()
 export class ListShopUsersUseCase {
@@ -57,6 +60,9 @@ export class CreateShopUserUseCase {
     private readonly users: UserRepository,
     private readonly pinHasher: PinHasherService,
     private readonly roleAssignment: RoleAssignmentValidator,
+    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
+    private readonly identityProvisioning: IdentityProvisioningService,
   ) {}
 
   async execute(
@@ -83,6 +89,24 @@ export class CreateShopUserUseCase {
       created_at: timestamp,
       updated_at: timestamp,
     });
+
+    const shop = await this.shops.findShopById(auth.shopId);
+    if (shop) {
+      const owned = shop.ownerUserId
+        ? await this.shops.findByOwnerUserId(shop.ownerUserId)
+        : [shop];
+      const rootShopId = this.hierarchy.resolveRootShopId(owned, auth.shopId);
+      const rootShop = owned.find((candidate) => candidate.id === rootShopId) ?? shop;
+      await this.identityProvisioning.provisionStaffUser({
+        phone,
+        displayName: user.name,
+        userId: user.id,
+        rootShopId,
+        organizationName: rootShop.name,
+        shopId: auth.shopId,
+        role: user.role,
+      });
+    }
 
     return {
       id: user.id,

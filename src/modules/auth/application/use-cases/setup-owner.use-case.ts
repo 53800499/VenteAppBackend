@@ -14,6 +14,7 @@ import { UserRepository } from '../../../users/domain/repositories/user.reposito
 import { Pin } from '../../domain/value-objects/pin.vo';
 import { SetupOwnerCommand } from '../commands/auth.commands';
 import { ValidateSetupOwnerUseCase } from './validate-setup-owner.use-case';
+import { IdentityProvisioningService } from '../../../identity/domain/services/identity-provisioning.service';
 
 @Injectable()
 export class SetupOwnerUseCase {
@@ -27,6 +28,7 @@ export class SetupOwnerUseCase {
     private readonly events: EventEmitter2,
     private readonly tenantDb: TenantDatabaseService,
     private readonly validateSetup: ValidateSetupOwnerUseCase,
+    private readonly identityProvisioning: IdentityProvisioningService,
   ) {}
 
   async execute(command: SetupOwnerCommand) {
@@ -72,6 +74,14 @@ export class SetupOwnerUseCase {
       });
 
       this.events.emit(AUTH_EVENTS.SETUP_COMPLETED, new SetupCompletedEvent(user.id, shop.id));
+
+      await this.identityProvisioning.provisionNewOwnerShop({
+        phone: ownerPhone,
+        displayName: command.ownerName,
+        userId: user.id,
+        shopId: shop.id,
+        shopName: shop.name,
+      });
 
       return {
         shopId: shop.id,

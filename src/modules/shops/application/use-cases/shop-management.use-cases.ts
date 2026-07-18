@@ -13,6 +13,7 @@ import { ShopHierarchyService } from '../../domain/services/shop-hierarchy.servi
 import { LastActiveShopException, ShopInactiveException } from '../../exceptions/shop.exceptions';
 import { CreateShopDto, UpdateShopDto } from '../dto/shop-management.dto';
 import { Shop } from '../../domain/entities/shop.entity';
+import { IdentityProvisioningService } from '../../../identity/domain/services/identity-provisioning.service';
 
 @Injectable()
 export class ListOwnedShopsUseCase {
@@ -79,6 +80,7 @@ export class CreateShopUseCase {
     private readonly logAudit: LogAuditUseCase,
     private readonly configService: ConfigService,
     private readonly tenantDb: TenantDatabaseService,
+    private readonly identityProvisioning: IdentityProvisioningService,
   ) {}
 
   async execute(auth: AuthContext, dto: CreateShopDto) {
@@ -120,6 +122,24 @@ export class CreateShopUseCase {
       newValue: { id: shop.id, name: shop.name },
       reason: 'Création boutique (UC-20)',
     });
+
+    const ownedAfterCreate = await this.shops.findByOwnerUserId(auth.userId);
+    const rootShopIdAfterCreate = this.hierarchy.resolveRootShopId(
+      ownedAfterCreate,
+      shop.id,
+    );
+    const rootShop =
+      ownedAfterCreate.find((candidate) => candidate.id === rootShopIdAfterCreate) ??
+      shop;
+    const groupIds = this.hierarchy
+      .shopsInGroup(ownedAfterCreate, shop.id)
+      .map((candidate) => candidate.id);
+    await this.identityProvisioning.provisionOwnerGroupAccess(
+      auth.userId,
+      rootShopIdAfterCreate,
+      rootShop.name,
+      groupIds,
+    );
 
     return {
       id: shop.id,

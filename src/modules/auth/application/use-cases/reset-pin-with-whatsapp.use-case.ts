@@ -52,8 +52,10 @@ export class ResetPinWithWhatsappOtpUseCase {
     }
 
     const memberships = await this.membershipResolver.resolveByPhone(payload.phone);
-    const selected = memberships.find(
-      (m) => m.userId === input.userId && m.shopId === input.shopId,
+    const selected = this.membershipResolver.findMatchingMembership(
+      memberships,
+      input.userId,
+      input.shopId,
     );
     if (!selected) {
       throw new ForbiddenException('Boutique non autorisée pour ce numéro.');

@@ -4,6 +4,7 @@ import { CoreModule } from '../../core/core.module';
 import { AuthorizationGuardsModule } from '../../shared/authorization-guards.module';
 import { AuditPersistenceModule } from '../audit/audit-persistence.module';
 import { AuthModule } from '../auth/auth.module';
+import { IdentityModule } from '../identity/identity.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
 import {
@@ -28,6 +29,7 @@ import { ShopsController } from './presentation/controllers/shops.controller';
     ConfigModule,
     AuthorizationGuardsModule,
     AuditPersistenceModule,
+    forwardRef(() => IdentityModule),
     TenantsModule,
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
