@@ -26,6 +26,44 @@ export class SupabaseProductRepository extends ProductRepository {
     return data ? ProductMapper.toDomain(data as ProductRow) : null;
   }
 
+  async findIdByNameInShop(shopId: number, name: string): Promise<number | null> {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+
+    const { data, error } = await this.supabase.db
+      .from('products')
+      .select('id')
+      .eq('shop_id', shopId)
+      .ilike('name', trimmed)
+      .eq('is_archived', false)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new BadRequestException(error.message);
+    return data?.id ?? null;
+  }
+
+  async findIdByServerIdInShop(
+    shopId: number,
+    serverId: string,
+  ): Promise<number | null> {
+    const trimmed = serverId.trim();
+    if (!trimmed) return null;
+
+    const { data, error } = await this.supabase.db
+      .from('products')
+      .select('id')
+      .eq('shop_id', shopId)
+      .eq('server_id', trimmed)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new BadRequestException(error.message);
+    return data?.id ?? null;
+  }
+
   async listByShop(shopId: number, filters: ProductListFilters = {}): Promise<Product[]> {
     let query = this.supabase.db.from('products').select('*').eq('shop_id', shopId);
 

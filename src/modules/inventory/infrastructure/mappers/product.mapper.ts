@@ -19,6 +19,7 @@ export class ProductMapper {
       row.created_at,
       row.updated_at,
       row.version,
+      row.server_id ?? null,
     );
   }
 }

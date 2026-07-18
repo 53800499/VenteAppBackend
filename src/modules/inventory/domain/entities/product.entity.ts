@@ -15,5 +15,6 @@ export class Product {
     public readonly createdAt: number,
     public readonly updatedAt: number,
     public readonly version: number,
+    public readonly serverId: string | null = null,
   ) {}
 }

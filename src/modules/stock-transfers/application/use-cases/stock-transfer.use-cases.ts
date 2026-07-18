@@ -611,10 +611,17 @@ export class ReceiveTransferUseCase {
       }
 
       let destProductId = item.destinationProductId;
-      if (destProductId == null && item.productServerId) {
-        destProductId = await this.repo.findProductIdByServerId(
-          auth.shopId,
-          item.productServerId,
+      if (destProductId != null) {
+        const linked = await this.products.findByIdAndShop(destProductId, auth.shopId);
+        if (!linked) destProductId = null;
+      }
+      if (destProductId == null) {
+        const setup = productSetups.get(item.id);
+        destProductId = await this.resolveDestinationProductId(
+          auth,
+          transfer,
+          item,
+          setup,
         );
       }
       if (destProductId == null) {
@@ -771,12 +778,72 @@ export class ReceiveTransferUseCase {
     return created.id;
   }
 
+  private async resolveDestinationProductId(
+    auth: AuthContext,
+    transfer: StockTransfer,
+    item: StockTransferItem,
+    setup?: ReceiveTransferProductSetupDto,
+  ): Promise<number | null> {
+    const serverIdCandidates = [
+      item.productServerId,
+      setup?.productServerId,
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => !!value);
+
+    for (const serverId of serverIdCandidates) {
+      const byServerId = await this.products.findIdByServerIdInShop(
+        auth.shopId,
+        serverId,
+      );
+      if (byServerId != null) return byServerId;
+
+      const byTransferRepo = await this.repo.findProductIdByServerId(
+        auth.shopId,
+        serverId,
+      );
+      if (byTransferRepo != null) return byTransferRepo;
+    }
+
+    const sourceProduct = await this.products.findByIdAndShop(
+      item.sourceProductId,
+      transfer.sourceShopId,
+    );
+    const sourceServerId = sourceProduct?.serverId?.trim();
+    if (sourceServerId) {
+      const bySourceServerId = await this.products.findIdByServerIdInShop(
+        auth.shopId,
+        sourceServerId,
+      );
+      if (bySourceServerId != null) return bySourceServerId;
+    }
+
+    const name =
+      setup?.name?.trim() ||
+      item.productName?.trim() ||
+      sourceProduct?.name?.trim() ||
+      null;
+    if (name) {
+      return this.products.findIdByNameInShop(auth.shopId, name);
+    }
+
+    return null;
+  }
+
   private async autoProvisionDestinationProduct(
     auth: AuthContext,
     transfer: StockTransfer,
     item: StockTransferItem,
     setup?: ReceiveTransferProductSetupDto,
   ): Promise<number | null> {
+    const existing = await this.resolveDestinationProductId(
+      auth,
+      transfer,
+      item,
+      setup,
+    );
+    if (existing != null) return existing;
+
     if (setup) {
       return this.createDestinationProduct(auth, setup);
     }
