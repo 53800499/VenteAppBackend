@@ -36,6 +36,7 @@ import {
   CreateStockTransferItemData,
   StockTransferRepository,
 } from '../../domain/repositories/stock-transfer.repository';
+import { TransferDestinationProductService } from '../services/transfer-destination-product.service';
 
 function toTransferResponse(transfer: StockTransfer) {
   return {
@@ -85,6 +86,9 @@ function toTransferResponse(transfer: StockTransfer) {
         receiptId: item.receiptId,
         transferItemId: item.transferItemId,
         quantityReceived: item.quantityReceived,
+        quantityRefused: item.quantityRefused ?? 0,
+        refusalReason: item.refusalReason ?? null,
+        refusalResolution: item.refusalResolution ?? null,
       })),
     })),
     items: transfer.items.map((item) => ({
@@ -254,6 +258,15 @@ export class CreateTransferUseCase {
       items,
     );
 
+    await recordTransferEvent(this.repo, {
+      transferId: transfer.id,
+      shopId: auth.shopId,
+      eventType: 'created',
+      actorUserId: auth.userId,
+      payload: { itemCount: items.length, reference: transfer.reference },
+      createdAt: transfer.createdAt,
+    });
+
     return toTransferResponse(transfer);
   }
 
@@ -346,6 +359,131 @@ export class ValidateTransferUseCase {
       version: transfer.version + 1,
     });
 
+    await recordTransferEvent(this.repo, {
+      transferId: id,
+      shopId: auth.shopId,
+      eventType: 'validated',
+      actorUserId: auth.userId,
+      createdAt: timestamp,
+    });
+
+    const updated = await this.repo.findById(id);
+    return toTransferResponse(updated!);
+  }
+}
+
+@Injectable()
+export class SubmitTransferUseCase {
+  constructor(private readonly repo: StockTransferRepository) {}
+
+  async execute(auth: AuthContext, id: number) {
+    const transfer = await this.repo.findById(id);
+    if (!transfer) throw new NotFoundException('Transfert introuvable.');
+    if (transfer.sourceShopId !== auth.shopId) {
+      throw new BadRequestException('Soumission depuis la boutique source uniquement.');
+    }
+    if (transfer.status !== StockTransferStatus.DRAFT) {
+      throw new BadRequestException('Seul un brouillon peut être soumis.');
+    }
+
+    const timestamp = nowMs();
+    await this.repo.updateStatus(id, StockTransferStatus.PENDING_APPROVAL, {
+      version: transfer.version + 1,
+    });
+
+    await recordTransferEvent(this.repo, {
+      transferId: id,
+      shopId: auth.shopId,
+      eventType: 'submitted_for_approval',
+      actorUserId: auth.userId,
+      createdAt: timestamp,
+    });
+
+    const updated = await this.repo.findById(id);
+    return toTransferResponse(updated!);
+  }
+}
+
+@Injectable()
+export class ApproveTransferUseCase {
+  constructor(
+    private readonly repo: StockTransferRepository,
+    private readonly products: ProductRepository,
+    private readonly lotRepo: InventoryLotRepository,
+    private readonly lots: InventoryLotService,
+  ) {}
+
+  async execute(auth: AuthContext, id: number) {
+    const transfer = await this.repo.findById(id);
+    if (!transfer) throw new NotFoundException('Transfert introuvable.');
+    if (transfer.sourceShopId !== auth.shopId) {
+      throw new BadRequestException('Approbation depuis la boutique source uniquement.');
+    }
+    if (transfer.status !== StockTransferStatus.PENDING_APPROVAL) {
+      throw new BadRequestException('Seul un transfert en attente peut être approuvé.');
+    }
+
+    const timestamp = nowMs();
+
+    for (const item of transfer.items) {
+      const product = await this.products.findByIdAndShop(
+        item.sourceProductId,
+        auth.shopId,
+      );
+      if (!product) {
+        throw new BadRequestException(
+          `Produit « ${item.productName ?? item.sourceProductId} » introuvable.`,
+        );
+      }
+
+      await this.lots.ensureLotsForAllocation(auth.shopId, item.sourceProductId);
+
+      const activeLots = await this.lotRepo.findActiveByProduct(
+        auth.shopId,
+        item.sourceProductId,
+      );
+
+      let remaining = item.quantityRequested;
+      for (const lot of activeLots) {
+        if (remaining <= 0) break;
+        const available = lot.quantityRemaining - lot.quantityReserved;
+        const take = Math.min(available, remaining);
+        if (take <= 0) continue;
+
+        await this.lotRepo.updateStockState(
+          lot.id,
+          lot.quantityRemaining,
+          lot.quantityReserved + take,
+          lot.status,
+          lot.version,
+        );
+
+        await this.repo.insertReservation(item.id, lot.id, take, lot.unitCost);
+        remaining -= take;
+      }
+
+      if (remaining > 0) {
+        throw new BadRequestException(
+          `Stock insuffisant pour « ${product.name} » (manque ${remaining} u).`,
+        );
+      }
+    }
+
+    await this.repo.updateStatus(id, StockTransferStatus.VALIDATED, {
+      validated_by: auth.userId,
+      validated_at: timestamp,
+      version: transfer.version + 1,
+    });
+
+    await recordTransferEvent(this.repo, {
+      transferId: id,
+      shopId: auth.shopId,
+      eventType: 'validated',
+      actorUserId: auth.userId,
+      notes: 'Approbation manager',
+      createdAt: timestamp,
+    });
+
     const updated = await this.repo.findById(id);
     return toTransferResponse(updated!);
   }
@@ -358,6 +496,7 @@ export class ShipTransferUseCase {
     private readonly products: ProductRepository,
     private readonly lotRepo: InventoryLotRepository,
     private readonly stockMovements: StockMovementRepository,
+    private readonly destinationProducts: TransferDestinationProductService,
   ) {}
 
   async execute(auth: AuthContext, id: number, dto: ShipStockTransferDto) {
@@ -499,6 +638,15 @@ export class ShipTransferUseCase {
         created_at: timestamp,
       });
 
+      const destProductId = await this.destinationProducts.ensureDestinationProduct(
+        transfer.destinationShopId,
+        transfer,
+        item,
+      );
+      if (destProductId != null) {
+        await this.repo.updateItemDestinationProduct(item.id, destProductId);
+      }
+
       anyShipped = true;
     }
 
@@ -521,8 +669,32 @@ export class ShipTransferUseCase {
       },
     );
 
+    await recordTransferEvent(this.repo, {
+      transferId: id,
+      shopId: auth.shopId,
+      eventType: 'shipped',
+      actorUserId: auth.userId,
+      notes: dto.notes ?? null,
+      payload: {
+        shipmentId,
+        reference: shipmentReference,
+        label: dto.label.trim() || 'Expédition',
+      },
+      createdAt: timestamp,
+    });
+
     const updated = await this.repo.findById(id);
     return toTransferResponse(updated!);
+  }
+}
+
+@Injectable()
+export class ListInTransitTransfersUseCase {
+  constructor(private readonly repo: StockTransferRepository) {}
+
+  async execute(auth: AuthContext) {
+    const list = await this.repo.listInTransit(auth.shopId);
+    return list.map(toTransferResponse);
   }
 }
 
@@ -560,7 +732,7 @@ export class ReceiveTransferUseCase {
     }
 
     const timestamp = nowMs();
-    const quantities = new Map(dto.items.map((i) => [i.itemId, i.quantityReceived]));
+    const itemPayload = new Map(dto.items.map((item) => [item.itemId, item]));
     const productSetups = new Map(
       dto.items
         .filter((item) => item.productSetup != null)
@@ -574,9 +746,11 @@ export class ReceiveTransferUseCase {
       }
     }
 
-    const receiptItems = dto.items.filter((item) => item.quantityReceived > 0);
+    const receiptItems = dto.items.filter(
+      (item) => item.quantityReceived > 0 || (item.quantityRefused ?? 0) > 0,
+    );
     if (receiptItems.length === 0) {
-      throw new BadRequestException('Aucune quantité à réceptionner.');
+      throw new BadRequestException('Aucune quantité à traiter.');
     }
 
     const seq = (await this.repo.countReceipts(id)) + 1;
@@ -593,8 +767,12 @@ export class ReceiveTransferUseCase {
     });
 
     for (const item of transfer.items) {
-      const toReceive = quantities.get(item.id);
-      if (toReceive == null || toReceive <= 0) continue;
+      const payload = itemPayload.get(item.id);
+      if (payload == null) continue;
+
+      const toReceive = payload.quantityReceived ?? 0;
+      const toRefuse = payload.quantityRefused ?? 0;
+      if (toReceive <= 0 && toRefuse <= 0) continue;
 
       const pending = dto.shipmentId
         ? item.lotLines
@@ -604,116 +782,142 @@ export class ReceiveTransferUseCase {
               0,
             )
         : item.quantityShipped - item.quantityReceived;
-      if (toReceive > pending) {
+      if (toReceive + toRefuse > pending) {
         throw new BadRequestException(
-          `Quantité reçue trop élevée pour « ${item.productName ?? item.sourceProductId} ».`,
+          `Quantités reçues/refusées trop élevées pour « ${item.productName ?? item.sourceProductId} ».`,
+        );
+      }
+      if (toRefuse > 0 && (!payload.refusalReason || !payload.refusalResolution)) {
+        throw new BadRequestException(
+          `Motif et résolution requis pour le refus de « ${item.productName ?? item.sourceProductId} ».`,
         );
       }
 
       let destProductId = item.destinationProductId;
-      if (destProductId != null) {
-        const linked = await this.products.findByIdAndShop(destProductId, auth.shopId);
-        if (!linked) destProductId = null;
-      }
-      if (destProductId == null) {
-        const setup = productSetups.get(item.id);
-        destProductId = await this.resolveDestinationProductId(
-          auth,
-          transfer,
-          item,
-          setup,
-        );
-      }
-      if (destProductId == null) {
-        const setup = productSetups.get(item.id);
-        destProductId = await this.autoProvisionDestinationProduct(
-          auth,
-          transfer,
-          item,
-          setup,
-        );
-      }
-      if (destProductId == null) {
-        throw new BadRequestException(
-          `Produit « ${item.productName ?? item.sourceProductId} » introuvable dans la boutique destination.`,
-        );
-      }
-
-      const productBefore =
-        (await this.products.findByIdAndShop(destProductId, auth.shopId))
-          ?.quantityInStock ?? 0;
-
-      let remaining = toReceive;
-      for (const line of item.lotLines) {
-        if (remaining <= 0) break;
-        if (dto.shipmentId != null && line.shipmentId !== dto.shipmentId) {
-          continue;
+      if (toReceive > 0) {
+        if (destProductId != null) {
+          const linked = await this.products.findByIdAndShop(destProductId, auth.shopId);
+          if (!linked) destProductId = null;
         }
-        const linePending = line.quantity - line.quantityReceived;
-        if (linePending <= 0) continue;
+        if (destProductId == null) {
+          const setup = productSetups.get(item.id);
+          destProductId = await this.resolveDestinationProductId(
+            auth,
+            transfer,
+            item,
+            setup,
+          );
+        }
+        if (destProductId == null) {
+          const setup = productSetups.get(item.id);
+          destProductId = await this.autoProvisionDestinationProduct(
+            auth,
+            transfer,
+            item,
+            setup,
+          );
+        }
+        if (destProductId == null) {
+          throw new BadRequestException(
+            `Produit « ${item.productName ?? item.sourceProductId} » introuvable dans la boutique destination.`,
+          );
+        }
 
-        const take = Math.min(linePending, remaining);
-        const sourceLot = await this.lotRepo.findById(line.sourceLotId);
+        const productBefore =
+          (await this.products.findByIdAndShop(destProductId, auth.shopId))
+            ?.quantityInStock ?? 0;
 
-        const destLot = await this.lots.createLot({
-          shopId: auth.shopId,
-          productId: destProductId,
-          sourceType: InventoryLotSourceType.STOCK_TRANSFER_IN,
-          sourceId: transfer.id,
-          unitCost: line.unitCost,
-          quantity: take,
-          batchNumber: sourceLot?.batchNumber ?? null,
-          expiryDate: sourceLot?.expiryDate ?? null,
-          receivedAt: timestamp,
+        let remaining = toReceive;
+        for (const line of item.lotLines) {
+          if (remaining <= 0) break;
+          if (dto.shipmentId != null && line.shipmentId !== dto.shipmentId) {
+            continue;
+          }
+          const linePending = line.quantity - line.quantityReceived;
+          if (linePending <= 0) continue;
+
+          const take = Math.min(linePending, remaining);
+          const sourceLot = await this.lotRepo.findById(line.sourceLotId);
+
+          const destLot = await this.lots.createLot({
+            shopId: auth.shopId,
+            productId: destProductId,
+            sourceType: InventoryLotSourceType.STOCK_TRANSFER_IN,
+            sourceId: transfer.id,
+            unitCost: line.unitCost,
+            quantity: take,
+            batchNumber: sourceLot?.batchNumber ?? null,
+            expiryDate: sourceLot?.expiryDate ?? null,
+            receivedAt: timestamp,
+          });
+
+          await this.repo.updateLotLineReceived(
+            line.id,
+            line.quantityReceived + take,
+            destLot.id,
+          );
+
+          remaining -= take;
+        }
+
+        if (remaining > 0) {
+          throw new BadRequestException(
+            `Lignes de lots insuffisantes pour « ${item.productName} ».`,
+          );
+        }
+
+        const newReceived = item.quantityReceived + toReceive;
+        await this.repo.updateItemReceived(item.id, newReceived, destProductId);
+
+        const refreshed = await this.products.findByIdAndShop(destProductId, auth.shopId);
+        const qtyAfter = refreshed?.quantityInStock ?? productBefore + toReceive;
+
+        await this.stockMovements.create({
+          shop_id: auth.shopId,
+          product_id: destProductId,
+          user_id: auth.userId,
+          type: 'transfer_in',
+          quantity_change: toReceive,
+          quantity_before: productBefore,
+          quantity_after: qtyAfter,
+          reason: `Transfert ${transfer.reference} · ${receiptReference}${
+            dto.shipmentId
+              ? ` · ${
+                  transfer.shipments.find((s) => s.id === dto.shipmentId)
+                    ?.reference ?? 'expédition'
+                }`
+              : ''
+          }`,
+          unit_cost: item.lotLines.length > 0 ? item.lotLines[0].unitCost : null,
+          created_at: timestamp,
         });
-
-        await this.repo.updateLotLineReceived(
-          line.id,
-          line.quantityReceived + take,
-          destLot.id,
-        );
-
-        remaining -= take;
       }
-
-      if (remaining > 0) {
-        throw new BadRequestException(
-          `Lignes de lots insuffisantes pour « ${item.productName} ».`,
-        );
-      }
-
-      const newReceived = item.quantityReceived + toReceive;
-      await this.repo.updateItemReceived(item.id, newReceived, destProductId);
 
       await this.repo.insertReceiptItem({
         receiptId,
         transferItemId: item.id,
         quantityReceived: toReceive,
+        quantityRefused: toRefuse,
+        refusalReason: payload.refusalReason ?? null,
+        refusalResolution: payload.refusalResolution ?? null,
         createdAt: timestamp,
       });
 
-      const refreshed = await this.products.findByIdAndShop(destProductId, auth.shopId);
-      const qtyAfter = refreshed?.quantityInStock ?? productBefore + toReceive;
-
-      await this.stockMovements.create({
-        shop_id: auth.shopId,
-        product_id: destProductId,
-        user_id: auth.userId,
-        type: 'transfer_in',
-        quantity_change: toReceive,
-        quantity_before: productBefore,
-        quantity_after: qtyAfter,
-        reason: `Transfert ${transfer.reference} · ${receiptReference}${
-          dto.shipmentId
-            ? ` · ${
-                transfer.shipments.find((s) => s.id === dto.shipmentId)
-                  ?.reference ?? 'expédition'
-              }`
-            : ''
-        }`,
-        unit_cost: item.lotLines.length > 0 ? item.lotLines[0].unitCost : null,
-        created_at: timestamp,
-      });
+      if (toRefuse > 0) {
+        await recordTransferEvent(this.repo, {
+          transferId: id,
+          shopId: auth.shopId,
+          eventType: 'refused',
+          actorUserId: auth.userId,
+          payload: {
+            itemId: item.id,
+            quantity: toRefuse,
+            reason: payload.refusalReason,
+            resolution: payload.refusalResolution,
+          },
+          createdAt: timestamp,
+        });
+      }
     }
 
     const refreshedTransfer = await this.repo.findById(id);

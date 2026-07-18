@@ -363,6 +363,46 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     if (error) throw new BadRequestException(error.message);
   }
 
+  async updateItemDestinationProduct(
+    itemId: number,
+    destinationProductId: number,
+  ): Promise<void> {
+    const { error } = await this.supabase.db
+      .from('stock_transfer_items')
+      .update({ destination_product_id: destinationProductId })
+      .eq('id', itemId);
+
+    if (error) throw new BadRequestException(error.message);
+  }
+
+  async listInTransit(destinationShopId: number): Promise<StockTransfer[]> {
+    const { data, error } = await this.supabase.db
+      .from('stock_transfers')
+      .select(
+        `
+        *,
+        source_shop:shops!stock_transfers_source_shop_id_fkey ( name ),
+        destination_shop:shops!stock_transfers_destination_shop_id_fkey ( name )
+      `,
+      )
+      .eq('destination_shop_id', destinationShopId)
+      .in('status', [
+        StockTransferStatus.PARTIALLY_SHIPPED,
+        StockTransferStatus.SHIPPED,
+        StockTransferStatus.PARTIALLY_RECEIVED,
+      ])
+      .order('updated_at', { ascending: false });
+
+    if (error) throw new BadRequestException(error.message);
+    return (data ?? [])
+      .map((row) => this.mapTransfer(row))
+      .filter((transfer) =>
+        transfer.items.some(
+          (item) => item.quantityReceived < item.quantityShipped,
+        ),
+      );
+  }
+
   async updateItemReceived(
     itemId: number,
     quantityReceived: number,
@@ -582,6 +622,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     receiptId: number;
     transferItemId: number;
     quantityReceived: number;
+    quantityRefused?: number;
+    refusalReason?: string | null;
+    refusalResolution?: string | null;
     createdAt: number;
   }): Promise<number> {
     const { data: row, error } = await this.supabase.db
@@ -590,6 +633,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         receipt_id: data.receiptId,
         transfer_item_id: data.transferItemId,
         quantity_received: data.quantityReceived,
+        quantity_refused: data.quantityRefused ?? 0,
+        refusal_reason: data.refusalReason ?? null,
+        refusal_resolution: data.refusalResolution ?? null,
         created_at: data.createdAt,
       })
       .select('id')
@@ -623,6 +669,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         receiptId: number;
         transferItemId: number;
         quantityReceived: number;
+        quantityRefused: number;
+        refusalReason: string | null;
+        refusalResolution: string | null;
       }[];
     }[] = [];
     for (const row of data ?? []) {
@@ -646,6 +695,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
           receiptId: itemRow.receipt_id as number,
           transferItemId: itemRow.transfer_item_id as number,
           quantityReceived: itemRow.quantity_received as number,
+          quantityRefused: (itemRow.quantity_refused as number | null) ?? 0,
+          refusalReason: (itemRow.refusal_reason as string | null) ?? null,
+          refusalResolution: (itemRow.refusal_resolution as string | null) ?? null,
         })),
       });
     }
@@ -679,6 +731,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         receiptId: number;
         transferItemId: number;
         quantityReceived: number;
+        quantityRefused: number;
+        refusalReason: string | null;
+        refusalResolution: string | null;
       }[];
     }[] = [],
     events: {
@@ -759,6 +814,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
                   item.receiptId,
                   item.transferItemId,
                   item.quantityReceived,
+                  item.quantityRefused,
+                  item.refusalReason as StockTransferReceiptItem['refusalReason'],
+                  item.refusalResolution as StockTransferReceiptItem['refusalResolution'],
                 ),
             ),
           ),

@@ -9,18 +9,22 @@ import { UsersModule } from '../users/users.module';
 import { StockTransferRepository } from './domain/repositories/stock-transfer.repository';
 import { SupabaseStockTransferRepository } from './infrastructure/repositories/supabase-stock-transfer.repository';
 import { StockTransfersController } from './presentation/controllers/stock-transfers.controller';
+import { TransferDestinationProductService } from './application/services/transfer-destination-product.service';
 import {
+  ApproveTransferUseCase,
   CancelTransferUseCase,
   CloseTransferUseCase,
   CreateReturnTransferUseCase,
   CreateTransferUseCase,
   GetTransferDetailsUseCase,
   ListIncomingTransfersUseCase,
+  ListInTransitTransfersUseCase,
   ListOutgoingTransfersUseCase,
   NextTransferReferenceUseCase,
   ReceiveTransferUseCase,
   ResolveTransferDiscrepancyUseCase,
   ShipTransferUseCase,
+  SubmitTransferUseCase,
   ValidateTransferUseCase,
 } from './application/use-cases/stock-transfer.use-cases';
 
@@ -37,12 +41,16 @@ import {
   controllers: [StockTransfersController],
   providers: [
     { provide: StockTransferRepository, useClass: SupabaseStockTransferRepository },
+    TransferDestinationProductService,
     ListOutgoingTransfersUseCase,
     ListIncomingTransfersUseCase,
+    ListInTransitTransfersUseCase,
     GetTransferDetailsUseCase,
     CreateTransferUseCase,
     CreateReturnTransferUseCase,
     ValidateTransferUseCase,
+    SubmitTransferUseCase,
+    ApproveTransferUseCase,
     ShipTransferUseCase,
     ReceiveTransferUseCase,
     CancelTransferUseCase,

@@ -32,19 +32,23 @@ import {
   ShipStockTransferDto,
 } from '../../application/dto/stock-transfer.dto';
 import {
+  ApproveTransferUseCase,
   CancelTransferUseCase,
   CloseTransferUseCase,
   CreateReturnTransferUseCase,
   CreateTransferUseCase,
   GetTransferDetailsUseCase,
   ListIncomingTransfersUseCase,
+  ListInTransitTransfersUseCase,
   ListOutgoingTransfersUseCase,
   NextTransferReferenceUseCase,
   ReceiveTransferUseCase,
   ResolveTransferDiscrepancyUseCase,
   ShipTransferUseCase,
+  SubmitTransferUseCase,
   ValidateTransferUseCase,
 } from '../../application/use-cases/stock-transfer.use-cases';
+import { TransferDestinationProductService } from '../../application/services/transfer-destination-product.service';
 
 @ApiTags('Transferts inter-boutiques')
 @Controller('stock-transfers')
@@ -55,10 +59,13 @@ export class StockTransfersController {
   constructor(
     private readonly listOutgoing: ListOutgoingTransfersUseCase,
     private readonly listIncoming: ListIncomingTransfersUseCase,
+    private readonly listInTransit: ListInTransitTransfersUseCase,
     private readonly getTransfer: GetTransferDetailsUseCase,
     private readonly createTransfer: CreateTransferUseCase,
     private readonly createReturnTransfer: CreateReturnTransferUseCase,
     private readonly validateTransfer: ValidateTransferUseCase,
+    private readonly submitTransfer: SubmitTransferUseCase,
+    private readonly approveTransfer: ApproveTransferUseCase,
     private readonly shipTransfer: ShipTransferUseCase,
     private readonly receiveTransfer: ReceiveTransferUseCase,
     private readonly cancelTransfer: CancelTransferUseCase,
@@ -79,6 +86,13 @@ export class StockTransfersController {
   @ApiOperation({ summary: 'Lister les transferts entrants' })
   getIncoming(@CurrentAuth() auth: AuthContext) {
     return this.listIncoming.execute(auth);
+  }
+
+  @Get('in-transit')
+  @RequirePermissions(Permission.INVENTORY_TRANSFER_READ)
+  @ApiOperation({ summary: 'Lister les transferts entrants en transit (expédiés non reçus)' })
+  getInTransit(@CurrentAuth() auth: AuthContext) {
+    return this.listInTransit.execute(auth);
   }
 
   @Get('next-reference')
@@ -118,6 +132,22 @@ export class StockTransfersController {
   @ApiOperation({ summary: 'Valider un transfert (réservation FIFO)' })
   postValidate(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
     return this.validateTransfer.execute(auth, id);
+  }
+
+  @Post(':id/submit')
+  @RequirePermissions(Permission.INVENTORY_TRANSFER_CREATE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Soumettre un brouillon pour approbation' })
+  postSubmit(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
+    return this.submitTransfer.execute(auth, id);
+  }
+
+  @Post(':id/approve')
+  @RequirePermissions(Permission.INVENTORY_TRANSFER_APPROVE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Approuver un transfert (validation FIFO)' })
+  postApprove(@CurrentAuth() auth: AuthContext, @Param('id', ParseIntPipe) id: number) {
+    return this.approveTransfer.execute(auth, id);
   }
 
   @Post(':id/ship')

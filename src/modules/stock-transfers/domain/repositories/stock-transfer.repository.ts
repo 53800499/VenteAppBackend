@@ -124,6 +124,13 @@ export abstract class StockTransferRepository {
     destinationProductId?: number | null,
   ): Promise<void>;
 
+  abstract updateItemDestinationProduct(
+    itemId: number,
+    destinationProductId: number,
+  ): Promise<void>;
+
+  abstract listInTransit(destinationShopId: number): Promise<StockTransfer[]>;
+
   abstract updateLotLineReceived(
     lotLineId: number,
     quantityReceived: number,
@@ -205,6 +212,9 @@ export abstract class StockTransferRepository {
     receiptId: number;
     transferItemId: number;
     quantityReceived: number;
+    quantityRefused?: number;
+    refusalReason?: string | null;
+    refusalResolution?: string | null;
     createdAt: number;
   }): Promise<number>;
 

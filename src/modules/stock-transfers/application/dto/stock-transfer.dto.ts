@@ -88,10 +88,26 @@ export class ReceiveStockTransferItemDto {
   @IsPositive()
   itemId!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Quantité acceptée (0 si refus total)' })
   @IsInt()
-  @Min(1)
+  @Min(0)
   quantityReceived!: number;
+
+  @ApiPropertyOptional({ description: 'Quantité refusée à la réception' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantityRefused?: number;
+
+  @ApiPropertyOptional({ enum: ['loss', 'breakage', 'theft', 'other'] })
+  @IsOptional()
+  @IsString()
+  refusalReason?: 'loss' | 'breakage' | 'theft' | 'other';
+
+  @ApiPropertyOptional({ enum: ['return', 'replacement'] })
+  @IsOptional()
+  @IsString()
+  refusalResolution?: 'return' | 'replacement';
 
   @ApiPropertyOptional()
   @IsOptional()

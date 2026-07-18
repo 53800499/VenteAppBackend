@@ -93,4 +93,5 @@ export enum Permission {
   INVENTORY_TRANSFER_READ = 'inventory:transfer:read',
   INVENTORY_TRANSFER_CREATE = 'inventory:transfer:create',
   INVENTORY_TRANSFER_RECEIVE = 'inventory:transfer:receive',
+  INVENTORY_TRANSFER_APPROVE = 'inventory:transfer:approve',
 }

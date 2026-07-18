@@ -1,5 +1,6 @@
 export const StockTransferStatus = {
   DRAFT: 'draft',
+  PENDING_APPROVAL: 'pending_approval',
   VALIDATED: 'validated',
   PARTIALLY_SHIPPED: 'partially_shipped',
   SHIPPED: 'shipped',
@@ -15,6 +16,8 @@ export type StockTransferStatusValue =
 
 export type StockTransferDiscrepancyReason = 'loss' | 'breakage' | 'theft' | 'other';
 export type StockTransferDiscrepancyResolution = 'write_off' | 'restock_source';
+export type StockTransferRefusalReason = 'loss' | 'breakage' | 'theft' | 'other';
+export type StockTransferRefusalResolution = 'return' | 'replacement';
 
 export class StockTransferEvent {
   constructor(
@@ -77,6 +80,9 @@ export class StockTransferReceiptItem {
     public readonly receiptId: number,
     public readonly transferItemId: number,
     public readonly quantityReceived: number,
+    public readonly quantityRefused: number = 0,
+    public readonly refusalReason: StockTransferRefusalReason | null = null,
+    public readonly refusalResolution: StockTransferRefusalResolution | null = null,
   ) {}
 }
 
