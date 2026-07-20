@@ -1163,6 +1163,7 @@ export class CancelTransferUseCase {
 
     if (
       transfer.status === StockTransferStatus.DRAFT ||
+      transfer.status === StockTransferStatus.PENDING_APPROVAL ||
       transfer.status === StockTransferStatus.VALIDATED
     ) {
       if (transfer.status === StockTransferStatus.VALIDATED) {

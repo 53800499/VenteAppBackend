@@ -65,7 +65,21 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       .order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
-    return (data ?? []).map((row) => this.mapTransfer(row));
+    const inTransitStatuses = new Set([
+      StockTransferStatus.PARTIALLY_SHIPPED,
+      StockTransferStatus.SHIPPED,
+      StockTransferStatus.PARTIALLY_RECEIVED,
+    ]);
+    // Pas de chevauchement avec « En transit » (réception encore en attente).
+    return (data ?? [])
+      .map((row) => this.mapTransfer(row))
+      .filter((transfer) => {
+        if (!inTransitStatuses.has(transfer.status)) return true;
+        const pending = transfer.items.some(
+          (item) => item.quantityReceived < item.quantityShipped,
+        );
+        return !pending;
+      });
   }
 
   async findById(id: number): Promise<StockTransfer | null> {
@@ -375,7 +389,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     if (error) throw new BadRequestException(error.message);
   }
 
-  async listInTransit(destinationShopId: number): Promise<StockTransfer[]> {
+  async listInTransit(shopId: number): Promise<StockTransfer[]> {
     const { data, error } = await this.supabase.db
       .from('stock_transfers')
       .select(
@@ -385,7 +399,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         destination_shop:shops!stock_transfers_destination_shop_id_fkey ( name )
       `,
       )
-      .eq('destination_shop_id', destinationShopId)
+      .or(`source_shop_id.eq.${shopId},destination_shop_id.eq.${shopId}`)
       .in('status', [
         StockTransferStatus.PARTIALLY_SHIPPED,
         StockTransferStatus.SHIPPED,

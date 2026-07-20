@@ -129,7 +129,7 @@ export abstract class StockTransferRepository {
     destinationProductId: number,
   ): Promise<void>;
 
-  abstract listInTransit(destinationShopId: number): Promise<StockTransfer[]>;
+  abstract listInTransit(shopId: number): Promise<StockTransfer[]>;
 
   abstract updateLotLineReceived(
     lotLineId: number,
