@@ -86,7 +86,8 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       .select(
         `
         *,
-        source_product:products!source_product_id ( name )
+        source_product:products!source_product_id ( name ),
+        destination_product:products!destination_product_id ( name )
       `,
       )
       .eq('transfer_id', id);
@@ -892,7 +893,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       row.source_product_id,
       row.destination_product_id ?? null,
       row.product_server_id ?? null,
-      row.source_product?.name ?? null,
+      row.source_product?.name ?? row.destination_product?.name ?? null,
       row.quantity_requested,
       row.quantity_shipped ?? 0,
       row.quantity_received ?? 0,
