@@ -94,4 +94,14 @@ export enum Permission {
   INVENTORY_TRANSFER_CREATE = 'inventory:transfer:create',
   INVENTORY_TRANSFER_RECEIVE = 'inventory:transfer:receive',
   INVENTORY_TRANSFER_APPROVE = 'inventory:transfer:approve',
+
+  // Bureau de change
+  FX_EXCHANGE_READ = 'fx_exchange:read',
+  FX_EXCHANGE_OPERATE = 'fx_exchange:operate',
+  FX_EXCHANGE_RATES = 'fx_exchange:rates',
+  FX_EXCHANGE_SESSION_OPEN = 'fx_exchange:session_open',
+  FX_EXCHANGE_SESSION_CLOSE = 'fx_exchange:session_close',
+  FX_EXCHANGE_ADJUST = 'fx_exchange:adjust',
+  FX_EXCHANGE_REPORT = 'fx_exchange:report',
+  FX_EXCHANGE_CONFIGURE = 'fx_exchange:configure',
 }

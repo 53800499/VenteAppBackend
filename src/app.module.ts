@@ -24,6 +24,7 @@ import { UsersModule } from './modules/users/users.module';
 import { CalculatorsModule } from './modules/calculators/calculators.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
+import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.
     CalculatorsModule,
     PurchasesModule,
     StockTransfersModule,
+    FxExchangeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
