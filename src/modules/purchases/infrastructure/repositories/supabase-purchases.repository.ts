@@ -305,11 +305,21 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
 
   async updatePurchaseOrderStatus(shopId: number, id: number, status: PurchaseOrderStatus): Promise<void> {
     const timestamp = nowMs();
+    const { data: current, error: readErr } = await this.supabase.db
+      .from('purchase_orders')
+      .select('version')
+      .eq('shop_id', shopId)
+      .eq('id', id)
+      .maybeSingle();
+    if (readErr) throw new BadRequestException(readErr.message);
+
+    const nextVersion = ((current?.version as number | undefined) ?? 1) + 1;
     const { error } = await this.supabase.db
       .from('purchase_orders')
       .update({
         status,
         updated_at: timestamp,
+        version: nextVersion,
       })
       .eq('shop_id', shopId)
       .eq('id', id);
