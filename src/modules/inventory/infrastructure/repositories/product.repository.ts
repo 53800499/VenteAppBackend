@@ -64,6 +64,24 @@ export class SupabaseProductRepository extends ProductRepository {
     return data?.id ?? null;
   }
 
+  async findIdBySkuInShop(shopId: number, sku: string): Promise<number | null> {
+    const trimmed = sku.trim();
+    if (!trimmed) return null;
+
+    const { data, error } = await this.supabase.db
+      .from('products')
+      .select('id')
+      .eq('shop_id', shopId)
+      .ilike('sku', trimmed)
+      .eq('is_archived', false)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new BadRequestException(error.message);
+    return data?.id ?? null;
+  }
+
   async listByShop(shopId: number, filters: ProductListFilters = {}): Promise<Product[]> {
     let query = this.supabase.db.from('products').select('*').eq('shop_id', shopId);
 

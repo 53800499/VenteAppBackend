@@ -30,6 +30,7 @@ export abstract class ProductRepository {
   abstract findByIdAndShop(id: number, shopId: number): Promise<Product | null>;
   abstract findIdByNameInShop(shopId: number, name: string): Promise<number | null>;
   abstract findIdByServerIdInShop(shopId: number, serverId: string): Promise<number | null>;
+  abstract findIdBySkuInShop(shopId: number, sku: string): Promise<number | null>;
   abstract listByShop(shopId: number, filters?: ProductListFilters): Promise<Product[]>;
   abstract listLowStock(shopId: number, defaultThreshold: number): Promise<Product[]>;
   abstract create(data: CreateProductData): Promise<Product>;

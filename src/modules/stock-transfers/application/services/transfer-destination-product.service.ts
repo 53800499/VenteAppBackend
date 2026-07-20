@@ -23,6 +23,20 @@ export class TransferDestinationProductService {
     private readonly configService: ConfigService,
   ) {}
 
+  async resolveExistingDestinationProduct(
+    destinationShopId: number,
+    transfer: StockTransfer,
+    item: StockTransferItem,
+    setup?: ReceiveTransferProductSetupDto,
+  ): Promise<number | null> {
+    return this.resolveDestinationProductId(
+      destinationShopId,
+      transfer,
+      item,
+      setup,
+    );
+  }
+
   async ensureDestinationProduct(
     destinationShopId: number,
     transfer: StockTransfer,
@@ -70,14 +84,6 @@ export class TransferDestinationProductService {
     item: StockTransferItem,
     setup?: ReceiveTransferProductSetupDto,
   ): Promise<number | null> {
-    if (item.destinationProductId != null) {
-      const linked = await this.products.findByIdAndShop(
-        item.destinationProductId,
-        destinationShopId,
-      );
-      if (linked) return linked.id;
-    }
-
     const serverIdCandidates = [
       item.productServerId,
       setup?.productServerId,
@@ -85,7 +91,25 @@ export class TransferDestinationProductService {
       .map((value) => value?.trim())
       .filter((value): value is string => !!value);
 
-    for (const serverId of serverIdCandidates) {
+    const nameCandidates = [
+      setup?.name,
+      item.productName,
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => !!value);
+
+    const sourceProduct = await this.products.findByIdAndShop(
+      item.sourceProductId,
+      transfer.sourceShopId,
+    );
+    if (sourceProduct?.serverId?.trim()) {
+      serverIdCandidates.push(sourceProduct.serverId.trim());
+    }
+    if (sourceProduct?.name?.trim()) {
+      nameCandidates.push(sourceProduct.name.trim());
+    }
+
+    for (const serverId of [...new Set(serverIdCandidates)]) {
       const byServerId = await this.products.findIdByServerIdInShop(
         destinationShopId,
         serverId,
@@ -99,26 +123,31 @@ export class TransferDestinationProductService {
       if (byTransferRepo != null) return byTransferRepo;
     }
 
-    const sourceProduct = await this.products.findByIdAndShop(
-      item.sourceProductId,
-      transfer.sourceShopId,
-    );
-    const sourceServerId = sourceProduct?.serverId?.trim();
-    if (sourceServerId) {
-      const bySourceServerId = await this.products.findIdByServerIdInShop(
+    const sourceSku = sourceProduct?.sku?.trim();
+    if (sourceSku) {
+      const bySku = await this.products.findIdBySkuInShop(
         destinationShopId,
-        sourceServerId,
+        sourceSku,
       );
-      if (bySourceServerId != null) return bySourceServerId;
+      if (bySku != null) return bySku;
     }
 
-    const name =
-      setup?.name?.trim() ||
-      item.productName?.trim() ||
-      sourceProduct?.name?.trim() ||
-      null;
-    if (name) {
-      return this.products.findIdByNameInShop(destinationShopId, name);
+    for (const name of [...new Set(nameCandidates.map((n) => n.trim()))]) {
+      const byName = await this.products.findIdByNameInShop(
+        destinationShopId,
+        name,
+      );
+      if (byName != null) return byName;
+    }
+
+    // Lien déjà stocké en dernier : évite de coller à un doublon antérieur
+    // alors qu'un article existant matche par nom / serverId.
+    if (item.destinationProductId != null) {
+      const linked = await this.products.findByIdAndShop(
+        item.destinationProductId,
+        destinationShopId,
+      );
+      if (linked) return linked.id;
     }
 
     return null;
@@ -152,6 +181,12 @@ export class TransferDestinationProductService {
       created_at: timestamp,
       updated_at: timestamp,
     });
+
+    if (setup.productServerId?.trim()) {
+      await this.products.updateInShop(product.id, destinationShopId, {
+        server_id: setup.productServerId.trim(),
+      });
+    }
 
     return product.id;
   }

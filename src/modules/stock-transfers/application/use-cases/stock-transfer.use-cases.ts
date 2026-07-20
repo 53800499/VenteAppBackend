@@ -741,17 +741,13 @@ export class ListInTransitTransfersUseCase {
 
 @Injectable()
 export class ReceiveTransferUseCase {
-  private static readonly importCategoryName = 'Transferts inter-boutiques';
-
   constructor(
     private readonly repo: StockTransferRepository,
     private readonly products: ProductRepository,
-    private readonly categories: CategoryRepository,
     private readonly lots: InventoryLotService,
     private readonly lotRepo: InventoryLotRepository,
     private readonly stockMovements: StockMovementRepository,
-    private readonly validation: ProductValidationService,
-    private readonly configService: ConfigService,
+    private readonly destinationProducts: TransferDestinationProductService,
   ) {}
 
   async execute(auth: AuthContext, id: number, dto: ReceiveStockTransferDto) {
@@ -834,25 +830,20 @@ export class ReceiveTransferUseCase {
         );
       }
 
-      let destProductId = item.destinationProductId;
+      let destProductId: number | null = null;
       if (toReceive > 0) {
-        if (destProductId != null) {
-          const linked = await this.products.findByIdAndShop(destProductId, auth.shopId);
-          if (!linked) destProductId = null;
-        }
+        const setup = productSetups.get(item.id);
+        // Toujours résoudre via catalogue (nom / serverId / sku) avant le lien stocké,
+        // pour ne pas coller à un doublon créé par un transfert précédent.
+        destProductId = await this.destinationProducts.resolveExistingDestinationProduct(
+          auth.shopId,
+          transfer,
+          item,
+          setup,
+        );
         if (destProductId == null) {
-          const setup = productSetups.get(item.id);
-          destProductId = await this.resolveDestinationProductId(
-            auth,
-            transfer,
-            item,
-            setup,
-          );
-        }
-        if (destProductId == null) {
-          const setup = productSetups.get(item.id);
-          destProductId = await this.autoProvisionDestinationProduct(
-            auth,
+          destProductId = await this.destinationProducts.ensureDestinationProduct(
+            auth.shopId,
             transfer,
             item,
             setup,
@@ -1001,157 +992,6 @@ export class ReceiveTransferUseCase {
 
     const updated = await this.repo.findById(id);
     return toTransferResponse(updated!);
-  }
-
-  private async resolveImportCategoryId(shopId: number): Promise<number> {
-    const categories = await this.categories.findAllByShop(shopId, true);
-    const existing = categories.find(
-      (category) => category.name === ReceiveTransferUseCase.importCategoryName,
-    );
-    if (existing) return existing.id;
-    if (categories.length > 0) return categories[0].id;
-
-    const timestamp = nowMs();
-    const created = await this.categories.create({
-      shop_id: shopId,
-      name: ReceiveTransferUseCase.importCategoryName,
-      description: 'Produits créés à la réception d\'un transfert',
-      sort_order: 999,
-      created_at: timestamp,
-      updated_at: timestamp,
-    });
-    return created.id;
-  }
-
-  private async resolveDestinationProductId(
-    auth: AuthContext,
-    transfer: StockTransfer,
-    item: StockTransferItem,
-    setup?: ReceiveTransferProductSetupDto,
-  ): Promise<number | null> {
-    const serverIdCandidates = [
-      item.productServerId,
-      setup?.productServerId,
-    ]
-      .map((value) => value?.trim())
-      .filter((value): value is string => !!value);
-
-    for (const serverId of serverIdCandidates) {
-      const byServerId = await this.products.findIdByServerIdInShop(
-        auth.shopId,
-        serverId,
-      );
-      if (byServerId != null) return byServerId;
-
-      const byTransferRepo = await this.repo.findProductIdByServerId(
-        auth.shopId,
-        serverId,
-      );
-      if (byTransferRepo != null) return byTransferRepo;
-    }
-
-    const sourceProduct = await this.products.findByIdAndShop(
-      item.sourceProductId,
-      transfer.sourceShopId,
-    );
-    const sourceServerId = sourceProduct?.serverId?.trim();
-    if (sourceServerId) {
-      const bySourceServerId = await this.products.findIdByServerIdInShop(
-        auth.shopId,
-        sourceServerId,
-      );
-      if (bySourceServerId != null) return bySourceServerId;
-    }
-
-    const name =
-      setup?.name?.trim() ||
-      item.productName?.trim() ||
-      sourceProduct?.name?.trim() ||
-      null;
-    if (name) {
-      return this.products.findIdByNameInShop(auth.shopId, name);
-    }
-
-    return null;
-  }
-
-  private async autoProvisionDestinationProduct(
-    auth: AuthContext,
-    transfer: StockTransfer,
-    item: StockTransferItem,
-    setup?: ReceiveTransferProductSetupDto,
-  ): Promise<number | null> {
-    const existing = await this.resolveDestinationProductId(
-      auth,
-      transfer,
-      item,
-      setup,
-    );
-    if (existing != null) return existing;
-
-    if (setup) {
-      return this.createDestinationProduct(auth, setup);
-    }
-
-    const sourceProduct = await this.products.findByIdAndShop(
-      item.sourceProductId,
-      transfer.sourceShopId,
-    );
-    const name =
-      item.productName?.trim() || sourceProduct?.name?.trim() || null;
-    if (!name) return null;
-
-    const unitCost =
-      item.lotLines.length > 0 ? item.lotLines[0].unitCost : null;
-    const priceSell = Math.max(
-      1,
-      sourceProduct?.priceSell ?? unitCost ?? 1,
-    );
-
-    return this.createDestinationProduct(auth, {
-      name,
-      priceSell,
-      priceBuy: sourceProduct?.priceBuy ?? unitCost ?? undefined,
-      productServerId: item.productServerId ?? undefined,
-    });
-  }
-
-  private async createDestinationProduct(
-    auth: AuthContext,
-    setup: ReceiveTransferProductSetupDto,
-  ): Promise<number> {
-    this.validation.validateName(setup.name);
-    this.validation.validatePrices({
-      priceSell: setup.priceSell,
-      priceBuy: setup.priceBuy,
-    });
-
-    const categoryId = await this.resolveImportCategoryId(auth.shopId);
-    const defaultThreshold = this.configService.get<number>(
-      'dashboard.defaultAlertThreshold',
-      5,
-    );
-    const timestamp = nowMs();
-
-    const product = await this.products.create({
-      shop_id: auth.shopId,
-      category_id: categoryId,
-      name: setup.name.trim(),
-      quantity_in_stock: 0,
-      alert_threshold: defaultThreshold,
-      price_buy: setup.priceBuy ?? null,
-      price_sell: setup.priceSell,
-      created_at: timestamp,
-      updated_at: timestamp,
-    });
-
-    if (setup.productServerId?.trim()) {
-      await this.products.updateInShop(product.id, auth.shopId, {
-        server_id: setup.productServerId.trim(),
-      });
-    }
-
-    return product.id;
   }
 }
 

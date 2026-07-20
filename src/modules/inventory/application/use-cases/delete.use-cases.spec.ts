@@ -23,6 +23,9 @@ const sampleCategory = new Category(1, 1, 'Boissons', null, true, 0, 0, 0);
 function mockProductRepo(overrides: Partial<ProductRepository> = {}): ProductRepository {
   return {
     findByIdAndShop: jest.fn(),
+    findIdByNameInShop: jest.fn(),
+    findIdByServerIdInShop: jest.fn(),
+    findIdBySkuInShop: jest.fn(),
     listByShop: jest.fn(),
     listLowStock: jest.fn(),
     create: jest.fn(),
