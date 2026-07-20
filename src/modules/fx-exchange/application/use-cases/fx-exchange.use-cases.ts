@@ -100,6 +100,7 @@ export class CreateFxRateUseCase {
         sellRateNumerator: dto.sellRateNumerator,
         sellRateDenominator: dto.sellRateDenominator,
         createdBy: auth.userId,
+        applyMode: dto.applyMode ?? 'next_session',
       }),
     );
   }
@@ -195,6 +196,28 @@ export class CloseFxSessionUseCase {
 }
 
 @Injectable()
+export class ConfirmFxSessionCloseUseCase {
+  constructor(private readonly repo: FxExchangeRepository) {}
+
+  execute(auth: AuthContext, sessionId: number) {
+    return this.repo.assertModuleEnabled(auth.shopId).then(() =>
+      this.repo.confirmCloseSession(auth.shopId, sessionId, auth.userId),
+    );
+  }
+}
+
+@Injectable()
+export class CancelFxPendingCloseUseCase {
+  constructor(private readonly repo: FxExchangeRepository) {}
+
+  execute(auth: AuthContext, sessionId: number) {
+    return this.repo.assertModuleEnabled(auth.shopId).then(() =>
+      this.repo.cancelPendingClose(auth.shopId, sessionId),
+    );
+  }
+}
+
+@Injectable()
 export class CreateFxOperationUseCase {
   constructor(
     private readonly repo: FxExchangeRepository,
@@ -209,6 +232,7 @@ export class CreateFxOperationUseCase {
         fromAmount: dto.fromAmount,
         toCurrency: dto.toCurrency,
         toAmount: dto.toAmount,
+        customerId: dto.customerId ?? null,
         note: dto.note ?? null,
         createdBy: auth.userId,
         allowNegativeBalance: this.guard.canAdjust(auth),
@@ -232,10 +256,18 @@ export class PreviewFxOperationUseCase {
         ? dto.toCurrency
         : dto.fromCurrency;
 
-    const rates = await this.repo.findLatestRatesForShop(auth.shopId);
-    const rate = rates.find((r) => r.quoteCurrency === quoteCurrency);
+    const open = await this.repo.findOpenSession(auth.shopId);
+    const rate = open
+      ? await this.repo.findSessionRate(auth.shopId, open.id, quoteCurrency)
+      : (await this.repo.findLatestRatesForShop(auth.shopId)).find(
+          (r) => r.quoteCurrency === quoteCurrency,
+        ) ?? null;
     if (!rate) {
-      throw new BadRequestException(`Aucun taux défini pour ${quoteCurrency}.`);
+      throw new BadRequestException(
+        open
+          ? `Aucun taux de session pour ${quoteCurrency}.`
+          : `Aucun taux défini pour ${quoteCurrency}.`,
+      );
     }
 
     let toAmount = 0;

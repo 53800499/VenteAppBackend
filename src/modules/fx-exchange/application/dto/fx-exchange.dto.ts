@@ -66,6 +66,15 @@ export class CreateFxRateDto {
   @IsInt()
   @Min(1)
   sellRateDenominator!: number;
+
+  @ApiPropertyOptional({
+    enum: ['now', 'next_session'],
+    description:
+      'Si une session est ouverte : now applique aux ops suivantes, next_session conserve les taux gelés.',
+  })
+  @IsOptional()
+  @IsIn(['now', 'next_session'])
+  applyMode?: 'now' | 'next_session';
 }
 
 export class OpeningBalanceItemDto {
@@ -133,6 +142,12 @@ export class CreateFxOperationDto {
   @IsInt()
   @Min(1)
   toAmount!: number;
+
+  @ApiPropertyOptional({ example: 42 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  customerId?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

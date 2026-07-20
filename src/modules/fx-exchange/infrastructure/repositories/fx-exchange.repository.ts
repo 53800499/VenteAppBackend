@@ -175,7 +175,21 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       .select('*')
       .single();
     if (error) throw new BadRequestException(error.message);
-    return this.toRateSnapshot(inserted);
+
+    const snapshot = this.toRateSnapshot(inserted);
+    if (data.applyMode === 'now') {
+      const open = await this.findOpenSession(shopId);
+      if (open) {
+        await this.pinSessionRate(
+          shopId,
+          open.id,
+          data.quoteCurrency,
+          snapshot.id,
+          timestamp,
+        );
+      }
+    }
+    return snapshot;
   }
 
   async listRateSnapshots(
@@ -244,7 +258,7 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       .from('fx_sessions')
       .select('*')
       .eq('shop_id', shopId)
-      .eq('status', 'open')
+      .in('status', ['open', 'pending_close'])
       .order('opened_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -274,7 +288,11 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
   ): Promise<FxSessionRecord> {
     const existing = await this.findOpenSession(shopId);
     if (existing) {
-      throw new ConflictException('Une session FX est déjà ouverte.');
+      throw new ConflictException(
+        existing.status === 'pending_close'
+          ? 'Une clôture est en attente de validation.'
+          : 'Une session FX est déjà ouverte.',
+      );
     }
 
     const rates = await this.findLatestRatesForShop(shopId);
@@ -324,6 +342,16 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       if (balanceError) throw new BadRequestException(balanceError.message);
     }
 
+    for (const rate of rates) {
+      await this.pinSessionRate(
+        shopId,
+        sessionRow.id,
+        rate.quoteCurrency,
+        rate.id,
+        timestamp,
+      );
+    }
+
     return (await this.findSessionById(shopId, sessionRow.id))!;
   }
 
@@ -335,7 +363,11 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
     const session = await this.findSessionById(shopId, sessionId);
     if (!session) throw new NotFoundException('Session FX introuvable.');
     if (session.status !== 'open') {
-      throw new ConflictException('Cette session FX est déjà clôturée.');
+      throw new ConflictException(
+        session.status === 'pending_close'
+          ? 'Le comptage a déjà été soumis.'
+          : 'Cette session FX est déjà clôturée.',
+      );
     }
 
     const liveBalances = await this.computeLiveBalances(shopId, sessionId);
@@ -361,15 +393,83 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
     const { error: sessionError } = await this.supabase.db
       .from('fx_sessions')
       .update({
-        closed_by: data.closedBy,
-        closed_at: timestamp,
-        status: 'closed',
+        status: 'pending_close',
         closing_note: data.closingNote,
         updated_at: timestamp,
       })
       .eq('id', sessionId)
       .eq('shop_id', shopId);
     if (sessionError) throw new BadRequestException(sessionError.message);
+
+    return (await this.findSessionById(shopId, sessionId))!;
+  }
+
+  async confirmCloseSession(
+    shopId: number,
+    sessionId: number,
+    closedBy: number,
+  ): Promise<FxSessionRecord> {
+    const session = await this.findSessionById(shopId, sessionId);
+    if (!session) throw new NotFoundException('Session FX introuvable.');
+    if (session.status !== 'pending_close') {
+      throw new ConflictException(
+        session.status === 'open'
+          ? "Soumettez d'abord le comptage."
+          : 'Cette session FX est déjà clôturée.',
+      );
+    }
+
+    const timestamp = nowMs();
+    const { error } = await this.supabase.db
+      .from('fx_sessions')
+      .update({
+        closed_by: closedBy,
+        closed_at: timestamp,
+        status: 'closed',
+        updated_at: timestamp,
+      })
+      .eq('id', sessionId)
+      .eq('shop_id', shopId);
+    if (error) throw new BadRequestException(error.message);
+
+    return (await this.findSessionById(shopId, sessionId))!;
+  }
+
+  async cancelPendingClose(
+    shopId: number,
+    sessionId: number,
+  ): Promise<FxSessionRecord> {
+    const session = await this.findSessionById(shopId, sessionId);
+    if (!session) throw new NotFoundException('Session FX introuvable.');
+    if (session.status !== 'pending_close') {
+      throw new ConflictException(
+        'Aucune clôture en attente de validation.',
+      );
+    }
+
+    const timestamp = nowMs();
+    for (const balance of session.balances) {
+      const { error } = await this.supabase.db
+        .from('fx_session_balances')
+        .update({
+          expected_balance: null,
+          counted_balance: null,
+          difference: null,
+        })
+        .eq('id', balance.id);
+      if (error) throw new BadRequestException(error.message);
+    }
+
+    const { error } = await this.supabase.db
+      .from('fx_sessions')
+      .update({
+        status: 'open',
+        closing_note: null,
+        updated_at: timestamp,
+      })
+      .eq('id', sessionId)
+      .eq('shop_id', shopId);
+    if (error) throw new BadRequestException(error.message);
 
     return (await this.findSessionById(shopId, sessionId))!;
   }
@@ -392,10 +492,10 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
         ? data.toCurrency
         : data.fromCurrency;
 
-    const rate = await this.findLatestRate(shopId, quoteCurrency);
+    const rate = await this.findSessionRate(shopId, sessionId, quoteCurrency);
     if (!rate) {
       throw new BadRequestException(
-        `Aucun taux défini pour ${quoteCurrency}.`,
+        `Aucun taux de session pour ${quoteCurrency}.`,
       );
     }
 
@@ -437,6 +537,8 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       data.allowNegativeBalance,
     );
 
+    await this.assertCustomerRequirement(shopId, data);
+
     const timestamp = nowMs();
     const { data: inserted, error } = await this.supabase.db
       .from('fx_operations')
@@ -450,6 +552,7 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
         to_amount: data.toAmount,
         rate_snapshot_id: rate.id,
         margin_fcfa: marginFcfa,
+        customer_id: data.customerId,
         note: data.note,
         created_by: data.createdBy,
         created_at: timestamp,
@@ -617,6 +720,64 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
     }
   }
 
+  async findSessionRate(
+    shopId: number,
+    sessionId: number,
+    quoteCurrency: string,
+  ): Promise<FxRateSnapshotRecord | null> {
+    const { data: pinned, error } = await this.supabase.db
+      .from('fx_session_rates')
+      .select('rate_snapshot_id')
+      .eq('shop_id', shopId)
+      .eq('session_id', sessionId)
+      .eq('quote_currency', quoteCurrency)
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+
+    if (pinned?.rate_snapshot_id) {
+      const { data, error: rateError } = await this.supabase.db
+        .from('fx_rate_snapshots')
+        .select('*')
+        .eq('id', pinned.rate_snapshot_id)
+        .maybeSingle();
+      if (rateError) throw new BadRequestException(rateError.message);
+      return data ? this.toRateSnapshot(data) : null;
+    }
+
+    // Backfill sessions ouvertes avant migration 038.
+    const latest = await this.findLatestRate(shopId, quoteCurrency);
+    if (latest) {
+      await this.pinSessionRate(
+        shopId,
+        sessionId,
+        quoteCurrency,
+        latest.id,
+        nowMs(),
+      );
+    }
+    return latest;
+  }
+
+  private async pinSessionRate(
+    shopId: number,
+    sessionId: number,
+    quoteCurrency: string,
+    rateSnapshotId: number,
+    appliedAt: number,
+  ): Promise<void> {
+    const { error } = await this.supabase.db.from('fx_session_rates').upsert(
+      {
+        shop_id: shopId,
+        session_id: sessionId,
+        quote_currency: quoteCurrency,
+        rate_snapshot_id: rateSnapshotId,
+        applied_at: appliedAt,
+      },
+      { onConflict: 'session_id,quote_currency' },
+    );
+    if (error) throw new BadRequestException(error.message);
+  }
+
   private async findLatestRate(
     shopId: number,
     quoteCurrency: string,
@@ -641,6 +802,42 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
     }
     if (from === to) {
       throw new BadRequestException('Les devises doivent être différentes.');
+    }
+  }
+
+  private async assertCustomerRequirement(
+    shopId: number,
+    data: CreateFxOperationData,
+  ): Promise<void> {
+    const { data: settings, error } = await this.supabase.db
+      .from('settings')
+      .select('fx_customer_required_above_fcfa')
+      .eq('shop_id', shopId)
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+
+    const threshold = Number(settings?.fx_customer_required_above_fcfa ?? 0);
+    if (threshold <= 0) return;
+
+    const fcfaAmount =
+      data.fromCurrency === BASE_CURRENCY ? data.fromAmount : data.toAmount;
+    if (fcfaAmount >= threshold && data.customerId == null) {
+      throw new BadRequestException(
+        `Un client est obligatoire pour les opérations ≥ ${threshold} FCFA.`,
+      );
+    }
+
+    if (data.customerId != null) {
+      const { data: customer, error: customerError } = await this.supabase.db
+        .from('customers')
+        .select('id')
+        .eq('id', data.customerId)
+        .eq('shop_id', shopId)
+        .maybeSingle();
+      if (customerError) throw new BadRequestException(customerError.message);
+      if (!customer) {
+        throw new BadRequestException('Client introuvable pour cette boutique.');
+      }
     }
   }
 
@@ -674,6 +871,13 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       .order('currency_code', { ascending: true });
     if (error) throw new BadRequestException(error.message);
 
+    const { data: rateRows, error: ratesError } = await this.supabase.db
+      .from('fx_session_rates')
+      .select('*')
+      .eq('session_id', row.id)
+      .order('quote_currency', { ascending: true });
+    if (ratesError) throw new BadRequestException(ratesError.message);
+
     return {
       id: row.id,
       shopId: row.shop_id,
@@ -686,6 +890,14 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       totalMarginFcfa: row.total_margin_fcfa,
       operationCount: row.operation_count,
       balances: (data ?? []).map((b) => this.toBalance(b)),
+      sessionRates: (rateRows ?? []).map((r) => ({
+        id: r.id,
+        shopId: r.shop_id,
+        sessionId: r.session_id,
+        quoteCurrency: r.quote_currency,
+        rateSnapshotId: r.rate_snapshot_id,
+        appliedAt: r.applied_at,
+      })),
     };
   }
 
@@ -750,6 +962,7 @@ export class SupabaseFxExchangeRepository extends FxExchangeRepository {
       toAmount: row.to_amount,
       rateSnapshotId: row.rate_snapshot_id,
       marginFcfa: row.margin_fcfa,
+      customerId: row.customer_id ?? null,
       note: row.note,
       createdBy: row.created_by,
       createdAt: row.created_at,

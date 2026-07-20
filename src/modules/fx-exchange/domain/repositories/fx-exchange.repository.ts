@@ -50,11 +50,21 @@ export interface FxSessionRecord {
   closedBy: number | null;
   openedAt: number;
   closedAt: number | null;
-  status: 'open' | 'closed';
+  status: 'open' | 'pending_close' | 'closed';
   closingNote: string | null;
   totalMarginFcfa: number;
   operationCount: number;
   balances: FxSessionBalanceRecord[];
+  sessionRates: FxSessionRateRecord[];
+}
+
+export interface FxSessionRateRecord {
+  id: number;
+  shopId: number;
+  sessionId: number;
+  quoteCurrency: string;
+  rateSnapshotId: number;
+  appliedAt: number;
 }
 
 export interface FxOperationRecord {
@@ -68,6 +78,7 @@ export interface FxOperationRecord {
   toAmount: number;
   rateSnapshotId: number | null;
   marginFcfa: number;
+  customerId: number | null;
   note: string | null;
   createdBy: number;
   createdAt: number;
@@ -103,6 +114,8 @@ export interface CreateFxRateData {
   sellRateNumerator: number;
   sellRateDenominator: number;
   createdBy: number;
+  /** `now` | `next_session` — défaut next_session */
+  applyMode?: 'now' | 'next_session';
 }
 
 export interface CreateFxOperationData {
@@ -111,6 +124,7 @@ export interface CreateFxOperationData {
   fromAmount: number;
   toCurrency: string;
   toAmount: number;
+  customerId: number | null;
   note: string | null;
   createdBy: number;
   allowNegativeBalance: boolean;
@@ -169,6 +183,12 @@ export abstract class FxExchangeRepository {
     shopId: number,
   ): Promise<FxRateSnapshotRecord[]>;
 
+  abstract findSessionRate(
+    shopId: number,
+    sessionId: number,
+    quoteCurrency: string,
+  ): Promise<FxRateSnapshotRecord | null>;
+
   abstract listSessions(shopId: number, limit?: number): Promise<FxSessionRecord[]>;
 
   abstract findOpenSession(shopId: number): Promise<FxSessionRecord | null>;
@@ -187,6 +207,17 @@ export abstract class FxExchangeRepository {
     shopId: number,
     sessionId: number,
     data: CloseFxSessionData,
+  ): Promise<FxSessionRecord>;
+
+  abstract confirmCloseSession(
+    shopId: number,
+    sessionId: number,
+    closedBy: number,
+  ): Promise<FxSessionRecord>;
+
+  abstract cancelPendingClose(
+    shopId: number,
+    sessionId: number,
   ): Promise<FxSessionRecord>;
 
   abstract createOperation(

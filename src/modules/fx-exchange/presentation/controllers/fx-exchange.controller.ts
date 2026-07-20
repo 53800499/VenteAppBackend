@@ -40,6 +40,8 @@ import {
 } from '../../application/dto/fx-exchange.dto';
 import {
   CloseFxSessionUseCase,
+  ConfirmFxSessionCloseUseCase,
+  CancelFxPendingCloseUseCase,
   CreateFxMovementUseCase,
   CreateFxOperationUseCase,
   CreateFxRateUseCase,
@@ -76,6 +78,8 @@ export class FxExchangeController {
     private readonly getOpenSession: GetOpenFxSessionUseCase,
     private readonly openSession: OpenFxSessionUseCase,
     private readonly closeSession: CloseFxSessionUseCase,
+    private readonly confirmCloseSession: ConfirmFxSessionCloseUseCase,
+    private readonly cancelPendingClose: CancelFxPendingCloseUseCase,
     private readonly createOperation: CreateFxOperationUseCase,
     private readonly previewOperation: PreviewFxOperationUseCase,
     private readonly listOperations: ListFxOperationsUseCase,
@@ -165,13 +169,35 @@ export class FxExchangeController {
   @Post('fx-exchange/sessions/:id/close')
   @RequirePermissions(Permission.FX_EXCHANGE_SESSION_CLOSE)
   @ApiParam({ name: 'id' })
-  @ApiOperation({ summary: 'Clôturer une session FX' })
+  @ApiOperation({ summary: 'Soumettre le comptage (pending_close)' })
   close(
     @CurrentAuth() auth: AuthContext,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CloseFxSessionDto,
   ) {
     return this.closeSession.execute(auth, id, dto);
+  }
+
+  @Post('fx-exchange/sessions/:id/confirm-close')
+  @RequirePermissions(Permission.FX_EXCHANGE_SESSION_CLOSE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Valider définitivement la clôture FX' })
+  confirmClose(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.confirmCloseSession.execute(auth, id);
+  }
+
+  @Post('fx-exchange/sessions/:id/cancel-close')
+  @RequirePermissions(Permission.FX_EXCHANGE_SESSION_CLOSE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Annuler un comptage et rouvrir la session' })
+  cancelClose(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.cancelPendingClose.execute(auth, id);
   }
 
   @Post('fx-exchange/operations/preview')

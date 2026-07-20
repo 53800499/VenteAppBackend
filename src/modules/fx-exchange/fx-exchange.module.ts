@@ -10,6 +10,8 @@ import { SupabaseFxExchangeRepository } from './infrastructure/repositories/fx-e
 import { FxExchangeController } from './presentation/controllers/fx-exchange.controller';
 import {
   CloseFxSessionUseCase,
+  ConfirmFxSessionCloseUseCase,
+  CancelFxPendingCloseUseCase,
   CreateFxMovementUseCase,
   CreateFxOperationUseCase,
   CreateFxRateUseCase,
@@ -53,6 +55,8 @@ import {
     GetOpenFxSessionUseCase,
     OpenFxSessionUseCase,
     CloseFxSessionUseCase,
+    ConfirmFxSessionCloseUseCase,
+    CancelFxPendingCloseUseCase,
     CreateFxOperationUseCase,
     PreviewFxOperationUseCase,
     ListFxOperationsUseCase,
