@@ -391,13 +391,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       .order('updated_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
-    return (data ?? [])
-      .map((row) => this.mapTransfer(row))
-      .filter((transfer) =>
-        transfer.items.some(
-          (item) => item.quantityReceived < item.quantityShipped,
-        ),
-      );
+    // Le filtre qty shipped/received nécessite les items : ici on s'appuie sur
+    // le statut (déjà restrictif). Le client recharge le détail complet au pull.
+    return (data ?? []).map((row) => this.mapTransfer(row));
   }
 
   async updateItemReceived(
