@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
@@ -77,22 +79,60 @@ export class StockTransfersController {
   @Get('outgoing')
   @RequirePermissions(Permission.INVENTORY_TRANSFER_READ)
   @ApiOperation({ summary: 'Lister les transferts sortants' })
-  getOutgoing(@CurrentAuth() auth: AuthContext) {
-    return this.listOutgoing.execute(auth);
+  @ApiQuery({
+    name: 'updatedAfter',
+    required: false,
+    description: 'Ne retourne que les transferts modifiés après ce timestamp (ms)',
+  })
+  getOutgoing(
+    @CurrentAuth() auth: AuthContext,
+    @Query('updatedAfter') updatedAfterRaw?: string,
+  ) {
+    const updatedAfter = updatedAfterRaw != null ? Number(updatedAfterRaw) : undefined;
+    return this.listOutgoing.execute(
+      auth,
+      Number.isFinite(updatedAfter) ? updatedAfter : undefined,
+    );
   }
 
   @Get('incoming')
   @RequirePermissions(Permission.INVENTORY_TRANSFER_READ)
   @ApiOperation({ summary: 'Lister les transferts entrants' })
-  getIncoming(@CurrentAuth() auth: AuthContext) {
-    return this.listIncoming.execute(auth);
+  @ApiQuery({
+    name: 'updatedAfter',
+    required: false,
+    description: 'Ne retourne que les transferts modifiés après ce timestamp (ms)',
+  })
+  getIncoming(
+    @CurrentAuth() auth: AuthContext,
+    @Query('updatedAfter') updatedAfterRaw?: string,
+  ) {
+    const updatedAfter = updatedAfterRaw != null ? Number(updatedAfterRaw) : undefined;
+    return this.listIncoming.execute(
+      auth,
+      Number.isFinite(updatedAfter) ? updatedAfter : undefined,
+    );
   }
 
   @Get('in-transit')
   @RequirePermissions(Permission.INVENTORY_TRANSFER_READ)
-  @ApiOperation({ summary: 'Lister les transferts entrants en transit (expédiés non reçus)' })
-  getInTransit(@CurrentAuth() auth: AuthContext) {
-    return this.listInTransit.execute(auth);
+  @ApiOperation({
+    summary: 'Lister les transferts entrants en transit (expédiés non reçus)',
+  })
+  @ApiQuery({
+    name: 'updatedAfter',
+    required: false,
+    description: 'Ne retourne que les transferts modifiés après ce timestamp (ms)',
+  })
+  getInTransit(
+    @CurrentAuth() auth: AuthContext,
+    @Query('updatedAfter') updatedAfterRaw?: string,
+  ) {
+    const updatedAfter = updatedAfterRaw != null ? Number(updatedAfterRaw) : undefined;
+    return this.listInTransit.execute(
+      auth,
+      Number.isFinite(updatedAfter) ? updatedAfter : undefined,
+    );
   }
 
   @Get('next-reference')

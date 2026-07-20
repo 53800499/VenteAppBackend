@@ -186,8 +186,8 @@ async function resolveCommercialGroupShopIds(
 export class ListOutgoingTransfersUseCase {
   constructor(private readonly repo: StockTransferRepository) {}
 
-  async execute(auth: AuthContext) {
-    const list = await this.repo.listOutgoing(auth.shopId);
+  async execute(auth: AuthContext, updatedAfter?: number) {
+    const list = await this.repo.listOutgoing(auth.shopId, { updatedAfter });
     return list.map(toTransferResponse);
   }
 }
@@ -196,8 +196,8 @@ export class ListOutgoingTransfersUseCase {
 export class ListIncomingTransfersUseCase {
   constructor(private readonly repo: StockTransferRepository) {}
 
-  async execute(auth: AuthContext) {
-    const list = await this.repo.listIncoming(auth.shopId);
+  async execute(auth: AuthContext, updatedAfter?: number) {
+    const list = await this.repo.listIncoming(auth.shopId, { updatedAfter });
     return list.map(toTransferResponse);
   }
 }
@@ -733,8 +733,8 @@ export class ShipTransferUseCase {
 export class ListInTransitTransfersUseCase {
   constructor(private readonly repo: StockTransferRepository) {}
 
-  async execute(auth: AuthContext) {
-    const list = await this.repo.listInTransit(auth.shopId);
+  async execute(auth: AuthContext, updatedAfter?: number) {
+    const list = await this.repo.listInTransit(auth.shopId, { updatedAfter });
     return list.map(toTransferResponse);
   }
 }

@@ -30,9 +30,15 @@ export type ShipStockTransferItemData = {
 };
 
 export abstract class StockTransferRepository {
-  abstract listOutgoing(sourceShopId: number): Promise<StockTransfer[]>;
+  abstract listOutgoing(
+    sourceShopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]>;
 
-  abstract listIncoming(destinationShopId: number): Promise<StockTransfer[]>;
+  abstract listIncoming(
+    destinationShopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]>;
 
   abstract findById(id: number): Promise<StockTransfer | null>;
 
@@ -129,7 +135,10 @@ export abstract class StockTransferRepository {
     destinationProductId: number,
   ): Promise<void>;
 
-  abstract listInTransit(shopId: number): Promise<StockTransfer[]>;
+  abstract listInTransit(
+    shopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]>;
 
   abstract updateLotLineReceived(
     lotLineId: number,

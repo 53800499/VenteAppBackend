@@ -27,8 +27,11 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     super();
   }
 
-  async listOutgoing(sourceShopId: number): Promise<StockTransfer[]> {
-    const { data, error } = await this.supabase.db
+  async listOutgoing(
+    sourceShopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]> {
+    let query = this.supabase.db
       .from('stock_transfers')
       .select(
         `
@@ -37,15 +40,23 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         destination_shop:shops!stock_transfers_destination_shop_id_fkey ( name )
       `,
       )
-      .eq('source_shop_id', sourceShopId)
-      .order('created_at', { ascending: false });
+      .eq('source_shop_id', sourceShopId);
+
+    if (options?.updatedAfter != null) {
+      query = query.gt('updated_at', options.updatedAfter);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
     return (data ?? []).map((row) => this.mapTransfer(row));
   }
 
-  async listIncoming(destinationShopId: number): Promise<StockTransfer[]> {
-    const { data, error } = await this.supabase.db
+  async listIncoming(
+    destinationShopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]> {
+    let query = this.supabase.db
       .from('stock_transfers')
       .select(
         `
@@ -58,8 +69,13 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       .in('status', [
         StockTransferStatus.VALIDATED,
         StockTransferStatus.RECEIVED,
-      ])
-      .order('created_at', { ascending: false });
+      ]);
+
+    if (options?.updatedAfter != null) {
+      query = query.gt('updated_at', options.updatedAfter);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
     return (data ?? []).map((row) => this.mapTransfer(row));
@@ -373,8 +389,11 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     if (error) throw new BadRequestException(error.message);
   }
 
-  async listInTransit(shopId: number): Promise<StockTransfer[]> {
-    const { data, error } = await this.supabase.db
+  async listInTransit(
+    shopId: number,
+    options?: { updatedAfter?: number },
+  ): Promise<StockTransfer[]> {
+    let query = this.supabase.db
       .from('stock_transfers')
       .select(
         `
@@ -388,8 +407,13 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
         StockTransferStatus.PARTIALLY_SHIPPED,
         StockTransferStatus.SHIPPED,
         StockTransferStatus.PARTIALLY_RECEIVED,
-      ])
-      .order('updated_at', { ascending: false });
+      ]);
+
+    if (options?.updatedAfter != null) {
+      query = query.gt('updated_at', options.updatedAfter);
+    }
+
+    const { data, error } = await query.order('updated_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
     // Le filtre qty shipped/received nécessite les items : ici on s'appuie sur
