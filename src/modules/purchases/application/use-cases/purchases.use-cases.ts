@@ -695,6 +695,15 @@ export class CreateDirectGoodsReceiptUseCase {
 }
 
 @Injectable()
+export class ListDirectGoodsReceiptsUseCase {
+  constructor(private readonly repo: PurchasesRepository) {}
+
+  execute(auth: AuthContext) {
+    return this.repo.listDirectReceipts(auth.shopId);
+  }
+}
+
+@Injectable()
 export class ListInvoicesUseCase {
   constructor(private readonly repo: PurchasesRepository) {}
 

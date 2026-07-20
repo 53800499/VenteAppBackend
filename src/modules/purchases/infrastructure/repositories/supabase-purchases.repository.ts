@@ -530,6 +530,67 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
     return receipts;
   }
 
+  async listDirectReceipts(shopId: number): Promise<PurchaseReceipt[]> {
+    const { data: recRows, error: recErr } = await this.supabase.db
+      .from('purchase_receipts')
+      .select(`
+        *,
+        users ( name )
+      `)
+      .eq('shop_id', shopId)
+      .eq('receipt_type', 'direct')
+      .is('purchase_order_id', null)
+      .order('received_at', { ascending: false });
+
+    if (recErr) throw new BadRequestException(recErr.message);
+
+    const receipts: PurchaseReceipt[] = [];
+
+    for (const recRow of recRows ?? []) {
+      const { data: recItemRows, error: recItemErr } = await this.supabase.db
+        .from('purchase_receipt_items')
+        .select(`
+          *,
+          products ( name )
+        `)
+        .eq('shop_id', shopId)
+        .eq('purchase_receipt_id', recRow.id);
+
+      if (recItemErr) throw new BadRequestException(recItemErr.message);
+
+      receipts.push({
+        id: recRow.id,
+        shopId: recRow.shop_id,
+        purchaseOrderId: recRow.purchase_order_id,
+        supplierId: recRow.supplier_id,
+        receiptType: recRow.receipt_type ?? 'direct',
+        receiptNumber: recRow.receipt_number,
+        receivedAt: recRow.received_at,
+        receivedBy: recRow.received_by,
+        receivedByName: recRow.users?.name ?? null,
+        notes: recRow.notes,
+        version: recRow.version,
+        serverId: recRow.server_id,
+        items: (recItemRows ?? []).map((row) => ({
+          id: row.id,
+          shopId: row.shop_id,
+          purchaseReceiptId: row.purchase_receipt_id,
+          purchaseOrderItemId: row.purchase_order_item_id,
+          productId: row.product_id,
+          productName: row.products?.name ?? null,
+          quantityReceived: row.quantity_received,
+          unitCost: Number(row.unit_cost),
+          batchNumber: row.batch_number,
+          expiryDate: row.expiry_date,
+          version: row.version,
+          serverId: row.server_id,
+        })),
+      });
+    }
+
+    return receipts;
+  }
+
   // ---------------------------------------------------------------------------
   // Invoices & Payments
   // ---------------------------------------------------------------------------

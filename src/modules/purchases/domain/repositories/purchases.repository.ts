@@ -140,6 +140,7 @@ export abstract class PurchasesRepository {
     items: CreateReceiptItemData[],
   ): Promise<PurchaseReceipt>;
   abstract listReceipts(shopId: number, poId: number): Promise<PurchaseReceipt[]>;
+  abstract listDirectReceipts(shopId: number): Promise<PurchaseReceipt[]>;
 
   // Invoices & Payments
   abstract createInvoice(shopId: number, data: CreateInvoiceData): Promise<SupplierInvoice>;

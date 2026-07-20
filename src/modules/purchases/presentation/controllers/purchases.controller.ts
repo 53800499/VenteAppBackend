@@ -46,6 +46,7 @@ import {
   ListSuppliersUseCase,
   ReceiveItemsUseCase,
   CreateDirectGoodsReceiptUseCase,
+  ListDirectGoodsReceiptsUseCase,
   SendPurchaseOrderUseCase,
   UpdatePurchaseOrderUseCase,
   UpdateSupplierUseCase,
@@ -75,6 +76,7 @@ export class PurchasesController {
     private readonly cancelOrder: CancelPurchaseOrderUseCase,
     private readonly receiveOrder: ReceiveItemsUseCase,
     private readonly createDirectReceipt: CreateDirectGoodsReceiptUseCase,
+    private readonly listDirectReceipts: ListDirectGoodsReceiptsUseCase,
     private readonly listInvoices: ListInvoicesUseCase,
     private readonly getInvoice: GetInvoiceDetailsUseCase,
     private readonly createInvoice: CreateSupplierInvoiceUseCase,
@@ -183,6 +185,13 @@ export class PurchasesController {
     @Body() dto: CreateReceiptDto,
   ) {
     return this.receiveOrder.execute(auth, id, dto);
+  }
+
+  @Get('goods-receipts')
+  @RequirePermissions(Permission.PROCUREMENT_READ)
+  @ApiOperation({ summary: 'Lister les approvisionnements directs' })
+  getDirectGoodsReceipts(@CurrentAuth() auth: AuthContext) {
+    return this.listDirectReceipts.execute(auth);
   }
 
   @Post('goods-receipts')
