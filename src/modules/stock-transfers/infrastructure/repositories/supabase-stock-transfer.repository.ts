@@ -442,7 +442,9 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     const { data, error } = await this.supabase.db
       .from('stock_transfers')
       .select('reference')
-      .in('source_shop_id', sourceShopIds);
+      .or(
+        `source_shop_id.in.(${sourceShopIds.join(',')}),destination_shop_id.in.(${sourceShopIds.join(',')})`,
+      );
 
     if (error) throw new BadRequestException(error.message);
 
@@ -462,8 +464,10 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     const { data, error } = await this.supabase.db
       .from('stock_transfers')
       .select('id')
-      .in('source_shop_id', sourceShopIds)
       .eq('reference', trimmed)
+      .or(
+        `source_shop_id.in.(${sourceShopIds.join(',')}),destination_shop_id.in.(${sourceShopIds.join(',')})`,
+      )
       .limit(1);
 
     if (error) throw new BadRequestException(error.message);

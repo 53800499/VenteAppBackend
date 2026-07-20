@@ -244,14 +244,29 @@ export class CreateTransferUseCase {
       this.hierarchy,
       auth.shopId,
     );
-    const reference = dto.reference.trim();
+    let reference = dto.reference.trim();
     if (!reference) {
       throw new BadRequestException('Référence obligatoire.');
     }
     if (await this.repo.isReferenceUsed(groupIds, reference)) {
-      throw new BadRequestException(
-        `La référence « ${reference} » est déjà utilisée dans votre réseau commercial.`,
-      );
+      reference = await this.repo.nextReference(groupIds);
+      let guard = 0;
+      while (
+        (await this.repo.isReferenceUsed(groupIds, reference)) &&
+        guard < 30
+      ) {
+        guard += 1;
+        const next = await this.repo.nextReference(groupIds);
+        // Si nextReference renvoie encore une valeur prise (course), suffixer.
+        reference =
+          next === reference ? `${next}-${guard}` : next;
+      }
+      if (await this.repo.isReferenceUsed(groupIds, reference)) {
+        throw new BadRequestException(
+          `La référence « ${dto.reference.trim()} » est déjà utilisée. `
+            + 'Impossible d\'en générer une nouvelle automatiquement.',
+        );
+      }
     }
 
     const items: CreateStockTransferItemData[] = [];
@@ -1223,6 +1238,8 @@ export class CreateReturnTransferUseCase {
   constructor(
     private readonly repo: StockTransferRepository,
     private readonly products: ProductRepository,
+    private readonly shops: ShopRepository,
+    private readonly hierarchy: ShopHierarchyService,
   ) {}
 
   async execute(auth: AuthContext, parentId: number) {
@@ -1248,7 +1265,28 @@ export class CreateReturnTransferUseCase {
     }
 
     const suffix = parent.reference.replace(/^(TRF|RET)-/, '');
-    const reference = `RET-${suffix}`;
+    let reference = `RET-${suffix}`;
+    const groupIds = await resolveCommercialGroupShopIds(
+      this.shops,
+      this.hierarchy,
+      auth.shopId,
+    );
+    if (await this.repo.isReferenceUsed(groupIds, reference)) {
+      reference = await this.repo.nextReference(groupIds);
+      reference = reference.replace(/^TRF-/i, 'RET-');
+      let guard = 0;
+      while (
+        (await this.repo.isReferenceUsed(groupIds, reference)) &&
+        guard < 30
+      ) {
+        guard += 1;
+        const next = (await this.repo.nextReference(groupIds)).replace(
+          /^TRF-/i,
+          'RET-',
+        );
+        reference = next === reference ? `${next}-${guard}` : next;
+      }
+    }
     const items: CreateStockTransferItemData[] = [];
 
     for (const item of parent.items) {
