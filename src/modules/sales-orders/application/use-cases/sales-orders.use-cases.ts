@@ -118,6 +118,8 @@ export class DeliverSalesOrderUseCase {
       number: `DL-${Date.now()}`,
       deliveredAt: Date.now(),
       notes: dto.notes,
+      driverName: dto.driverName,
+      vehiclePlate: dto.vehiclePlate,
       items: dto.items.map((i) => ({
         salesOrderItemId: i.salesOrderItemId,
         productId: i.productId,

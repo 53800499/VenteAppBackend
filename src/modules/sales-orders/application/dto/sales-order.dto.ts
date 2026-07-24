@@ -91,6 +91,14 @@ export class DeliverSalesOrderDto {
   @IsString()
   notes?: string;
 
+  @IsOptional()
+  @IsString()
+  driverName?: string;
+
+  @IsOptional()
+  @IsString()
+  vehiclePlate?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DeliverSalesOrderItemDto)

@@ -32,6 +32,8 @@ export interface SalesOrderDeliveryEntity {
   number: string;
   deliveredAt: number;
   notes?: string;
+  driverName?: string;
+  vehiclePlate?: string;
   saleId?: string;
   items: SalesOrderDeliveryItemEntity[];
 }
