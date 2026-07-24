@@ -56,6 +56,39 @@ export abstract class SaleRepository {
       version: number;
     },
   ): Promise<void>;
+  abstract sumReturnedBySaleItem(
+    shopId: number,
+    saleId: number,
+  ): Promise<Map<number, number>>;
+  abstract createReplacement(data: {
+    shop_id: number;
+    sale_id: number;
+    number: string;
+    replaced_at: number;
+    replaced_by: number;
+    notes: string | null;
+    items: Array<{
+      returned_sale_item_id: number;
+      returned_product_id: number;
+      quantity_returned: number;
+      issued_product_id: number;
+      quantity_issued: number;
+      unit_price_issued: number;
+      reason: string;
+    }>;
+  }): Promise<{ id: number; number: string; serverId: string | null }>;
+  abstract findSalesOrderIdBySale(
+    shopId: number,
+    saleId: number,
+  ): Promise<number | null>;
+  abstract addSalesOrderHistory(data: {
+    shop_id: number;
+    sales_order_id: number;
+    action: string;
+    performed_by: number;
+    performed_at: number;
+    details: string;
+  }): Promise<void>;
 }
 
 export abstract class SaleCustomerRepository {

@@ -8,7 +8,7 @@ import { ProductNotFoundException } from '../../../inventory/exceptions/inventor
 import { ProductRepository } from '../../../inventory/domain/repositories/product.repository';
 import { StockMovementRepository } from '../../../inventory/domain/repositories/stock-movement.repository';
 import { InventoryLotService } from '../../../inventory/domain/services/inventory-lot.service';
-import { LotAllocationSlice } from '../../../inventory/domain/entities/inventory-lot.entity';
+import { LotAllocationSlice, InventoryLotSourceType } from '../../../inventory/domain/entities/inventory-lot.entity';
 import { Sale } from '../../domain/entities/sale.entity';
 import {
   SaleCustomerRepository,
@@ -483,5 +483,217 @@ export class CancelSaleUseCase {
     });
 
     return { id: saleId, cancelled: true, receiptNumber: sale.receiptNumber };
+  }
+}
+
+@Injectable()
+export class CreateSaleReplacementUseCase {
+  constructor(
+    private readonly sales: SaleRepository,
+    private readonly products: ProductRepository,
+    private readonly stockMovements: StockMovementRepository,
+    private readonly lots: InventoryLotService,
+    private readonly logAudit: LogAuditUseCase,
+  ) {}
+
+  async execute(
+    auth: AuthContext,
+    saleId: number,
+    dto: {
+      number?: string;
+      replacedAt?: number;
+      notes?: string;
+      items: Array<{
+        returnedSaleItemId: number;
+        quantityReturned: number;
+        issuedProductId: number;
+        quantityIssued: number;
+        unitPriceIssued: number;
+        reason: string;
+      }>;
+    },
+  ) {
+    const sale = await this.sales.findByIdAndShop(saleId, auth.shopId);
+    if (!sale) throw new SaleNotFoundException(saleId);
+    if (sale.status === 'cancelled') {
+      throw new BadRequestException('Impossible de remplacer une vente annulée.');
+    }
+    if (sale.saleType !== 'standard') {
+      throw new BadRequestException(
+        'Le remplacement n\'est possible que sur une vente standard.',
+      );
+    }
+    if (!dto.items?.length) {
+      throw new BadRequestException('Ajoutez au moins une ligne de remplacement.');
+    }
+
+    const already = await this.sales.sumReturnedBySaleItem(auth.shopId, saleId);
+    const itemById = new Map(sale.items.map((i) => [i.id, i]));
+    const now = dto.replacedAt ?? nowMs();
+    const number =
+      dto.number?.trim() ||
+      `RX-${String(saleId).padStart(5, '0')}-${String(now).slice(-4)}`;
+
+    const prepared: Array<{
+      returned_sale_item_id: number;
+      returned_product_id: number;
+      quantity_returned: number;
+      issued_product_id: number;
+      quantity_issued: number;
+      unit_price_issued: number;
+      reason: string;
+      unitCostReturned: number;
+    }> = [];
+
+    for (const line of dto.items) {
+      const saleItem = itemById.get(line.returnedSaleItemId);
+      if (!saleItem?.productId) {
+        throw new BadRequestException(
+          `Ligne de vente #${line.returnedSaleItemId} introuvable.`,
+        );
+      }
+      if (line.quantityReturned <= 0 || line.quantityIssued <= 0) {
+        throw new BadRequestException('Quantités invalides.');
+      }
+      if (!line.reason?.trim()) {
+        throw new BadRequestException('Motif de remplacement requis.');
+      }
+
+      const prior = already.get(saleItem.id) ?? 0;
+      const returnable = Math.max(0, saleItem.quantity - prior);
+      if (line.quantityReturned > returnable) {
+        throw new BadRequestException(
+          `Retour trop élevé pour ${saleItem.productName} (reste ${returnable}).`,
+        );
+      }
+      already.set(saleItem.id, prior + line.quantityReturned);
+
+      const issued = await this.products.findByIdAndShop(
+        line.issuedProductId,
+        auth.shopId,
+      );
+      if (!issued) {
+        throw new NotFoundException(`Produit #${line.issuedProductId} introuvable.`);
+      }
+      if (issued.quantityInStock < line.quantityIssued) {
+        throw new BadRequestException(
+          `Stock insuffisant pour ${issued.name} (dispo ${issued.quantityInStock}).`,
+        );
+      }
+
+      prepared.push({
+        returned_sale_item_id: saleItem.id,
+        returned_product_id: saleItem.productId,
+        quantity_returned: line.quantityReturned,
+        issued_product_id: line.issuedProductId,
+        quantity_issued: line.quantityIssued,
+        unit_price_issued: line.unitPriceIssued,
+        reason: line.reason.trim(),
+        unitCostReturned: saleItem.unitCost ?? 0,
+      });
+    }
+
+    const replacement = await this.sales.createReplacement({
+      shop_id: auth.shopId,
+      sale_id: saleId,
+      number,
+      replaced_at: now,
+      replaced_by: auth.userId,
+      notes: dto.notes ?? null,
+      items: prepared.map(({ unitCostReturned: _, ...rest }) => rest),
+    });
+
+    for (const line of prepared) {
+      const returnedBefore =
+        (await this.products.findByIdAndShop(line.returned_product_id, auth.shopId))
+          ?.quantityInStock ?? 0;
+
+      await this.lots.createLot({
+        shopId: auth.shopId,
+        productId: line.returned_product_id,
+        sourceType: InventoryLotSourceType.SALE_REPLACEMENT_RETURN,
+        sourceId: replacement.id,
+        unitCost: line.unitCostReturned,
+        quantity: line.quantity_returned,
+        receivedAt: now,
+      });
+
+      const returnedAfter =
+        (await this.products.findByIdAndShop(line.returned_product_id, auth.shopId))
+          ?.quantityInStock ?? returnedBefore + line.quantity_returned;
+
+      await this.stockMovements.create({
+        shop_id: auth.shopId,
+        product_id: line.returned_product_id,
+        user_id: auth.userId,
+        type: 'return',
+        quantity_change: line.quantity_returned,
+        quantity_before: returnedBefore,
+        quantity_after: returnedAfter,
+        sale_id: saleId,
+        reason: `Remplacement ${replacement.number}`,
+        unit_cost: line.unitCostReturned,
+        created_at: now,
+      });
+
+      const issuedBefore =
+        (await this.products.findByIdAndShop(line.issued_product_id, auth.shopId))
+          ?.quantityInStock ?? 0;
+
+      const slices = await this.lots.allocateFifo({
+        shopId: auth.shopId,
+        productId: line.issued_product_id,
+        quantity: line.quantity_issued,
+      });
+      const unitCostIssued = InventoryLotService.weightedUnitCost(slices);
+
+      const issuedAfter =
+        (await this.products.findByIdAndShop(line.issued_product_id, auth.shopId))
+          ?.quantityInStock ?? issuedBefore - line.quantity_issued;
+
+      await this.stockMovements.create({
+        shop_id: auth.shopId,
+        product_id: line.issued_product_id,
+        user_id: auth.userId,
+        type: 'sale',
+        quantity_change: -line.quantity_issued,
+        quantity_before: issuedBefore,
+        quantity_after: issuedAfter,
+        sale_id: saleId,
+        reason: `Remplacement ${replacement.number}`,
+        unit_cost: Math.round(unitCostIssued),
+        created_at: now,
+      });
+    }
+
+    const soId = await this.sales.findSalesOrderIdBySale(auth.shopId, saleId);
+    if (soId != null) {
+      await this.sales.addSalesOrderHistory({
+        shop_id: auth.shopId,
+        sales_order_id: soId,
+        action: 'replacement',
+        performed_by: auth.userId,
+        performed_at: now,
+        details: `Remplacement ${replacement.number} via vente #${saleId}`,
+      });
+    }
+
+    await this.logAudit.execute({
+      shopId: auth.shopId,
+      userId: auth.userId,
+      action: AuditAction.SALE_REPLACED,
+      module: AuditModule.SALES,
+      entityId: saleId,
+      entityTable: 'sales',
+      newValue: { replacementId: replacement.id, number: replacement.number },
+      reason: `Remplacement ${replacement.number}`,
+    });
+
+    return {
+      id: replacement.id,
+      number: replacement.number,
+      serverId: replacement.serverId,
+      saleId,
+    };
   }
 }

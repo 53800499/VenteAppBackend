@@ -31,6 +31,7 @@ import { TenantGuard } from '../../../tenants/tenant.guard';
 import {
   CancelSaleDto,
   CreateQuickSaleDto,
+  CreateSaleReplacementDto,
   CreateStandardSaleDto,
   ListSalesQueryDto,
   SaleListItemDto,
@@ -39,6 +40,7 @@ import {
 import {
   CancelSaleUseCase,
   CreateQuickSaleUseCase,
+  CreateSaleReplacementUseCase,
   CreateStandardSaleUseCase,
   GetSaleUseCase,
   ListSalesUseCase,
@@ -56,6 +58,7 @@ export class SalesController {
     private readonly listSales: ListSalesUseCase,
     private readonly getSale: GetSaleUseCase,
     private readonly cancelSale: CancelSaleUseCase,
+    private readonly createSaleReplacement: CreateSaleReplacementUseCase,
   ) {}
 
   @Get()
@@ -101,6 +104,23 @@ export class SalesController {
   @ApiCreatedResponse({ type: SaleResponseDto })
   createQuick(@CurrentAuth() auth: AuthContext, @Body() dto: CreateQuickSaleDto) {
     return this.createQuickSale.execute(auth, dto);
+  }
+
+  @Post(':id/replacements')
+  @RequirePermissions(Permission.SALES_CREATE)
+  @ApiOperation({
+    summary: 'Remplacement post-vente (échange stock)',
+    description:
+      'Retour produit + nouvelle sortie FIFO. Aucun mouvement de caisse ni avoir.',
+  })
+  @ApiParam({ name: 'id', example: 1 })
+  @ApiCreatedResponse({ description: 'Remplacement enregistré' })
+  createReplacement(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateSaleReplacementDto,
+  ) {
+    return this.createSaleReplacement.execute(auth, id, dto);
   }
 
   @Patch(':id/cancel')

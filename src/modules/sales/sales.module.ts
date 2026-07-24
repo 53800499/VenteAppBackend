@@ -10,6 +10,7 @@ import { UsersModule } from '../users/users.module';
 import {
   CancelSaleUseCase,
   CreateQuickSaleUseCase,
+  CreateSaleReplacementUseCase,
   CreateStandardSaleUseCase,
   GetSaleUseCase,
   ListSalesUseCase,
@@ -49,6 +50,7 @@ import { SalesController } from './presentation/controllers/sales.controller';
     ListSalesUseCase,
     GetSaleUseCase,
     CancelSaleUseCase,
+    CreateSaleReplacementUseCase,
   ],
   exports: [SaleRepository],
 })

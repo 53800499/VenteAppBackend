@@ -262,3 +262,62 @@ export class SaleListItemDto {
   @ApiPropertyOptional()
   paymentMethod?: string;
 }
+
+export class CreateSaleReplacementItemDto {
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  returnedSaleItemId: number;
+
+  @ApiProperty({ example: 2 })
+  @IsInt()
+  @Min(1)
+  quantityReturned: number;
+
+  @ApiProperty({ example: 3 })
+  @IsInt()
+  @Min(1)
+  issuedProductId: number;
+
+  @ApiProperty({ example: 2 })
+  @IsInt()
+  @Min(1)
+  quantityIssued: number;
+
+  @ApiProperty({ example: 5000 })
+  @IsInt()
+  @Min(0)
+  unitPriceIssued: number;
+
+  @ApiProperty({
+    example: 'quality',
+    description: 'breakage | humidity | quality | wrong_item | other',
+  })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+}
+
+export class CreateSaleReplacementDto {
+  @ApiPropertyOptional({ example: 'RX-00012' })
+  @IsOptional()
+  @IsString()
+  number?: string;
+
+  @ApiPropertyOptional({ example: 1779836400000 })
+  @IsOptional()
+  @IsInt()
+  replacedAt?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiProperty({ type: [CreateSaleReplacementItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateSaleReplacementItemDto)
+  items: CreateSaleReplacementItemDto[];
+}

@@ -130,4 +130,128 @@ export class SupabaseSaleRepository extends SaleRepository {
     if (error) throw new BadRequestException(error.message);
     return (data ?? []) as SaleItemRow[];
   }
+
+  async sumReturnedBySaleItem(
+    shopId: number,
+    saleId: number,
+  ): Promise<Map<number, number>> {
+    const { data: reps, error: repErr } = await this.supabase.db
+      .from('sale_replacements')
+      .select('id')
+      .eq('shop_id', shopId)
+      .eq('sale_id', saleId);
+    if (repErr) throw new BadRequestException(repErr.message);
+    const ids = (reps ?? []).map((r: { id: number }) => r.id);
+    const map = new Map<number, number>();
+    if (ids.length === 0) return map;
+
+    const { data: items, error: itemErr } = await this.supabase.db
+      .from('sale_replacement_items')
+      .select('returned_sale_item_id, quantity_returned')
+      .eq('shop_id', shopId)
+      .in('replacement_id', ids);
+    if (itemErr) throw new BadRequestException(itemErr.message);
+
+    for (const row of items ?? []) {
+      const key = row.returned_sale_item_id as number;
+      map.set(key, (map.get(key) ?? 0) + (row.quantity_returned as number));
+    }
+    return map;
+  }
+
+  async createReplacement(data: {
+    shop_id: number;
+    sale_id: number;
+    number: string;
+    replaced_at: number;
+    replaced_by: number;
+    notes: string | null;
+    items: Array<{
+      returned_sale_item_id: number;
+      returned_product_id: number;
+      quantity_returned: number;
+      issued_product_id: number;
+      quantity_issued: number;
+      unit_price_issued: number;
+      reason: string;
+    }>;
+  }): Promise<{ id: number; number: string; serverId: string | null }> {
+    const { data: row, error } = await this.supabase.db
+      .from('sale_replacements')
+      .insert({
+        shop_id: data.shop_id,
+        sale_id: data.sale_id,
+        number: data.number,
+        replaced_at: data.replaced_at,
+        replaced_by: data.replaced_by,
+        notes: data.notes,
+        version: 1,
+        sync_status: 'synced',
+      })
+      .select('id, number, server_id')
+      .single();
+    if (error || !row) {
+      throw new BadRequestException(error?.message ?? 'Création remplacement impossible.');
+    }
+
+    const itemRows = data.items.map((it) => ({
+      shop_id: data.shop_id,
+      replacement_id: row.id,
+      returned_sale_item_id: it.returned_sale_item_id,
+      returned_product_id: it.returned_product_id,
+      quantity_returned: it.quantity_returned,
+      issued_product_id: it.issued_product_id,
+      quantity_issued: it.quantity_issued,
+      unit_price_issued: it.unit_price_issued,
+      reason: it.reason,
+      version: 1,
+      sync_status: 'synced',
+    }));
+
+    const { error: itemsErr } = await this.supabase.db
+      .from('sale_replacement_items')
+      .insert(itemRows);
+    if (itemsErr) {
+      await this.supabase.db.from('sale_replacements').delete().eq('id', row.id);
+      throw new BadRequestException(itemsErr.message);
+    }
+
+    return {
+      id: row.id,
+      number: row.number,
+      serverId: row.server_id ?? null,
+    };
+  }
+
+  async findSalesOrderIdBySale(
+    shopId: number,
+    saleId: number,
+  ): Promise<number | null> {
+    const { data, error } = await this.supabase.db
+      .from('sales_order_deliveries')
+      .select('sales_order_id')
+      .eq('shop_id', shopId)
+      .eq('sale_id', saleId)
+      .maybeSingle();
+    if (error) return null;
+    return data?.sales_order_id ?? null;
+  }
+
+  async addSalesOrderHistory(data: {
+    shop_id: number;
+    sales_order_id: number;
+    action: string;
+    performed_by: number;
+    performed_at: number;
+    details: string;
+  }): Promise<void> {
+    await this.supabase.db.from('sales_order_history_entries').insert({
+      shop_id: data.shop_id,
+      sales_order_id: data.sales_order_id,
+      action: data.action,
+      performed_by: data.performed_by,
+      performed_at: data.performed_at,
+      details: data.details,
+    });
+  }
 }

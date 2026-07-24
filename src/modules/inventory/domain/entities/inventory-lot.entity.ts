@@ -5,6 +5,7 @@ export const InventoryLotSourceType = {
   MANUAL_RESTOCK: 'manual_restock',
   SALE_CANCEL_RESTORE: 'sale_cancel_restore',
   STOCK_TRANSFER_IN: 'stock_transfer_in',
+  SALE_REPLACEMENT_RETURN: 'sale_replacement_return',
 } as const;
 
 export type InventoryLotSourceTypeValue =

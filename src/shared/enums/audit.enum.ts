@@ -8,6 +8,7 @@ export enum AuditAction {
   DEBT_FORGIVEN = 'debt_forgiven',
   SALE_CREATED = 'sale_created',
   SALE_CANCELLED = 'sale_cancelled',
+  SALE_REPLACED = 'sale_replaced',
   STOCK_ADJUSTED = 'stock_adjusted',
   PRODUCT_PRICE_CHANGED = 'product_price_changed',
   PRODUCT_ARCHIVED = 'product_archived',
