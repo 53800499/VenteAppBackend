@@ -820,6 +820,8 @@ export class ReceiveTransferUseCase {
             )
         : item.quantityShipped - item.quantityReceived;
       if (toReceive + toRefuse > pending) {
+        // Retry idempotent : déjà entièrement reçu → ignorer la ligne.
+        if (pending <= 0) continue;
         throw new BadRequestException(
           `Quantités reçues/refusées trop élevées pour « ${item.productName ?? item.sourceProductId} ».`,
         );

@@ -182,12 +182,7 @@ export class TransferDestinationProductService {
       updated_at: timestamp,
     });
 
-    if (setup.productServerId?.trim()) {
-      await this.products.updateInShop(product.id, destinationShopId, {
-        server_id: setup.productServerId.trim(),
-      });
-    }
-
+    // Ne pas écrire setup.productServerId sur server_id (UNIQUE global).
     return product.id;
   }
 
