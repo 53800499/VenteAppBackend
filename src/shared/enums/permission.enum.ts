@@ -89,6 +89,11 @@ export enum Permission {
   PROCUREMENT_INVOICE_PAY = 'procurement:invoice_pay',
   PROCUREMENT_CANCEL = 'procurement:cancel',
 
+  // Commandes clients
+  SALES_ORDERS_READ = 'sales_orders:read',
+  SALES_ORDERS_WRITE = 'sales_orders:write',
+  SALES_ORDERS_DELIVER = 'sales_orders:deliver',
+
   // Transferts inter-boutiques
   INVENTORY_TRANSFER_READ = 'inventory:transfer:read',
   INVENTORY_TRANSFER_CREATE = 'inventory:transfer:create',

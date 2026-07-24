@@ -23,6 +23,7 @@ import { UsersModule } from './modules/users/users.module';
 
 import { CalculatorsModule } from './modules/calculators/calculators.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
 import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
 
@@ -49,6 +50,7 @@ import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
     AuditModule,
     CalculatorsModule,
     PurchasesModule,
+    SalesOrdersModule,
     StockTransfersModule,
     FxExchangeModule,
   ],
