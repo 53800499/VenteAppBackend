@@ -9,15 +9,16 @@ import {
 } from 'class-validator';
 
 export class CreateSalesOrderItemDto {
-  @IsString()
-  productLocalId!: string;
+  @IsInt()
+  @Min(1)
+  productId!: number;
 
   @IsInt()
   @Min(1)
   quantityOrdered!: number;
 
   @IsInt()
-  @Min(1)
+  @Min(0)
   unitPrice!: number;
 
   @IsOptional()
@@ -33,8 +34,8 @@ export class CreateSalesOrderDto {
   @IsString()
   number!: string;
 
-  @IsString()
-  customerLocalId!: string;
+  @IsInt()
+  customerId!: number;
 
   @IsOptional()
   @IsString()
@@ -50,7 +51,23 @@ export class CreateSalesOrderDto {
 
   @IsOptional()
   @IsInt()
+  discount?: number;
+
+  @IsOptional()
+  @IsInt()
+  tax?: number;
+
+  @IsOptional()
+  @IsInt()
   total?: number;
+
+  @IsOptional()
+  @IsInt()
+  version?: number;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -58,9 +75,20 @@ export class CreateSalesOrderDto {
   items!: CreateSalesOrderItemDto[];
 }
 
-export class DeliverSalesOrderItemDto {
+/** Corps optionnel pour confirm / prepare / cancel / close (optimistic lock). */
+export class SalesOrderVersionDto {
+  @IsOptional()
+  @IsInt()
+  version?: number;
+
+  @IsOptional()
   @IsString()
-  salesOrderItemId!: string;
+  deviceId?: string;
+}
+
+export class DeliverSalesOrderItemDto {
+  @IsInt()
+  salesOrderItemId!: number;
 
   @IsInt()
   @Min(0)
@@ -75,11 +103,29 @@ export class DeliverSalesOrderItemDto {
   quantityRefused!: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantityReplaced?: number;
+
+  @IsOptional()
   @IsString()
   refusalReason?: string;
 
+  @IsOptional()
   @IsString()
-  productId!: string;
+  refusalDestination?: string;
+
+  @IsOptional()
+  @IsInt()
+  replacementProductId?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  replacementUnitPrice?: number;
+
+  @IsInt()
+  productId!: number;
 
   @IsInt()
   @Min(0)
@@ -99,6 +145,26 @@ export class DeliverSalesOrderDto {
   @IsString()
   vehiclePlate?: string;
 
+  @IsOptional()
+  @IsString()
+  remainingReason?: string;
+
+  @IsOptional()
+  @IsString()
+  number?: string;
+
+  @IsOptional()
+  @IsInt()
+  saleId?: number;
+
+  @IsOptional()
+  @IsInt()
+  version?: number;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DeliverSalesOrderItemDto)
@@ -109,4 +175,12 @@ export class CancelSalesOrderDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsInt()
+  version?: number;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }

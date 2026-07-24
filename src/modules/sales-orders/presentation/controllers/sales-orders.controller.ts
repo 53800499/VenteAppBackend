@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   UseGuards,
@@ -21,6 +22,7 @@ import {
   CancelSalesOrderDto,
   CreateSalesOrderDto,
   DeliverSalesOrderDto,
+  SalesOrderVersionDto,
 } from '../../application/dto/sales-order.dto';
 import {
   CancelSalesOrderUseCase,
@@ -30,6 +32,7 @@ import {
   DeliverSalesOrderUseCase,
   GetSalesOrderUseCase,
   ListSalesOrdersUseCase,
+  PrepareSalesOrderUseCase,
 } from '../../application/use-cases/sales-orders.use-cases';
 
 @ApiTags('sales-orders')
@@ -42,6 +45,7 @@ export class SalesOrdersController {
     private readonly getOrder: GetSalesOrderUseCase,
     private readonly createOrder: CreateSalesOrderUseCase,
     private readonly confirmOrder: ConfirmSalesOrderUseCase,
+    private readonly prepareOrder: PrepareSalesOrderUseCase,
     private readonly deliverOrder: DeliverSalesOrderUseCase,
     private readonly cancelOrder: CancelSalesOrderUseCase,
     private readonly closeOrder: CloseSalesOrderUseCase,
@@ -54,14 +58,26 @@ export class SalesOrdersController {
   async list(
     @CurrentAuth() auth: AuthContext,
     @Query('status') status?: string,
+    @Query('updatedAfter') updatedAfterRaw?: string,
   ) {
-    return this.listOrders.execute(String(auth.shopId), status);
+    const updatedAfter =
+      updatedAfterRaw != null && updatedAfterRaw !== ''
+        ? Number(updatedAfterRaw)
+        : undefined;
+    return this.listOrders.execute(
+      auth.shopId,
+      status,
+      Number.isFinite(updatedAfter) ? updatedAfter : undefined,
+    );
   }
 
   @Get(':id')
   @RequirePermissions(Permission.SALES_ORDERS_READ)
-  async get(@CurrentAuth() auth: AuthContext, @Param('id') id: string) {
-    return this.getOrder.execute(String(auth.shopId), id);
+  async get(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.getOrder.execute(auth.shopId, id);
   }
 
   @Post()
@@ -70,42 +86,56 @@ export class SalesOrdersController {
     @CurrentAuth() auth: AuthContext,
     @Body() dto: CreateSalesOrderDto,
   ) {
-    return this.createOrder.execute(
-      String(auth.shopId),
-      String(auth.userId),
-      dto,
-    );
+    return this.createOrder.execute(auth.shopId, auth.userId, dto);
   }
 
   @Post(':id/confirm')
   @RequirePermissions(Permission.SALES_ORDERS_WRITE)
-  async confirm(@CurrentAuth() auth: AuthContext, @Param('id') id: string) {
-    return this.confirmOrder.execute(String(auth.shopId), id);
+  async confirm(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SalesOrderVersionDto,
+  ) {
+    return this.confirmOrder.execute(auth.shopId, id, auth.userId, dto);
+  }
+
+  @Post(':id/prepare')
+  @RequirePermissions(Permission.SALES_ORDERS_WRITE)
+  async prepare(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SalesOrderVersionDto,
+  ) {
+    return this.prepareOrder.execute(auth.shopId, id, auth.userId, dto);
   }
 
   @Post(':id/deliver')
   @RequirePermissions(Permission.SALES_ORDERS_DELIVER)
   async deliver(
     @CurrentAuth() auth: AuthContext,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: DeliverSalesOrderDto,
   ) {
-    return this.deliverOrder.execute(String(auth.shopId), id, dto);
+    return this.deliverOrder.execute(auth.shopId, id, auth.userId, dto);
   }
 
   @Post(':id/cancel')
   @RequirePermissions(Permission.SALES_ORDERS_WRITE)
   async cancel(
     @CurrentAuth() auth: AuthContext,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: CancelSalesOrderDto,
   ) {
-    return this.cancelOrder.execute(String(auth.shopId), id, dto);
+    return this.cancelOrder.execute(auth.shopId, id, auth.userId, dto);
   }
 
   @Post(':id/close')
   @RequirePermissions(Permission.SALES_ORDERS_WRITE)
-  async close(@CurrentAuth() auth: AuthContext, @Param('id') id: string) {
-    return this.closeOrder.execute(String(auth.shopId), id);
+  async close(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SalesOrderVersionDto,
+  ) {
+    return this.closeOrder.execute(auth.shopId, id, auth.userId, dto);
   }
 }
