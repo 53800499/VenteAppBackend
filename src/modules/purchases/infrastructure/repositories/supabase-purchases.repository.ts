@@ -410,6 +410,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
       purchase_order_item_id: it.purchaseOrderItemId ?? null,
       product_id: it.productId,
       quantity_received: it.quantityReceived,
+      quantity_refused: it.quantityRefused ?? 0,
+      refusal_reason: it.refusalReason ?? null,
       unit_cost: it.unitCost,
       batch_number: it.batchNumber ?? null,
       expiry_date: it.expiryDate ?? null,
@@ -434,18 +436,22 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
 
       const { data: curPoItem, error: fetchErr } = await this.supabase.db
         .from('purchase_order_items')
-        .select('quantity_received')
+        .select('quantity_received, quantity_refused')
         .eq('id', item.purchaseOrderItemId)
         .single();
       
       if (fetchErr) throw new BadRequestException(fetchErr.message);
 
-      const newReceivedTotal = (curPoItem?.quantity_received ?? 0) + item.quantityReceived;
+      const newReceivedTotal =
+        (curPoItem?.quantity_received ?? 0) + item.quantityReceived;
+      const newRefusedTotal =
+        (curPoItem?.quantity_refused ?? 0) + (item.quantityRefused ?? 0);
 
       const { error: updErr } = await this.supabase.db
         .from('purchase_order_items')
         .update({
           quantity_received: newReceivedTotal,
+          quantity_refused: newRefusedTotal,
         })
         .eq('id', item.purchaseOrderItemId);
 
@@ -471,6 +477,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
         purchaseOrderItemId: row.purchase_order_item_id,
         productId: row.product_id,
         quantityReceived: row.quantity_received,
+        quantityRefused: row.quantity_refused ?? 0,
+        refusalReason: row.refusal_reason ?? null,
         unitCost: Number(row.unit_cost),
         batchNumber: row.batch_number,
         expiryDate: row.expiry_date,
@@ -528,6 +536,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
           productId: row.product_id,
           productName: row.products?.name ?? null,
           quantityReceived: row.quantity_received,
+          quantityRefused: row.quantity_refused ?? 0,
+          refusalReason: row.refusal_reason ?? null,
           unitCost: Number(row.unit_cost),
           batchNumber: row.batch_number,
           expiryDate: row.expiry_date,
@@ -589,6 +599,8 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
           productId: row.product_id,
           productName: row.products?.name ?? null,
           quantityReceived: row.quantity_received,
+          quantityRefused: row.quantity_refused ?? 0,
+          refusalReason: row.refusal_reason ?? null,
           unitCost: Number(row.unit_cost),
           batchNumber: row.batch_number,
           expiryDate: row.expiry_date,
@@ -782,6 +794,7 @@ export class SupabasePurchasesRepository extends PurchasesRepository {
       productName: row.products?.name ?? null,
       quantityOrdered: row.quantity_ordered,
       quantityReceived: row.quantity_received,
+      quantityRefused: row.quantity_refused ?? 0,
       unitCost: Number(row.unit_cost),
       discount: Number(row.discount),
       tax: Number(row.tax),

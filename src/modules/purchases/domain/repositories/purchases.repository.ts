@@ -75,6 +75,8 @@ export interface CreateReceiptItemData {
   purchaseOrderItemId?: number | null;
   productId: number;
   quantityReceived: number;
+  quantityRefused?: number;
+  refusalReason?: string | null;
   unitCost: number;
   batchNumber?: string | null;
   expiryDate?: number | null;

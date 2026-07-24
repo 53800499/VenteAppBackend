@@ -342,10 +342,29 @@ export class ReceiveItemsUseCase {
         );
       }
 
-      const remainingToReceive = poItem.quantityOrdered - poItem.quantityReceived;
-      if (item.quantityReceived > remainingToReceive) {
+      const refused = item.quantityRefused ?? 0;
+      const accepted = item.quantityReceived;
+      if (accepted < 0 || refused < 0) {
+        throw new BadRequestException('Quantités invalides.');
+      }
+      if (accepted + refused <= 0) {
         throw new BadRequestException(
-          `La quantité reçue (${item.quantityReceived}) dépasse la quantité restante à recevoir (${remainingToReceive}) pour le produit #${poItem.productId}.`,
+          'Indiquez une quantité acceptée ou refusée.',
+        );
+      }
+      if (refused > 0 && !item.refusalReason?.trim()) {
+        throw new BadRequestException(
+          'Motif de refus requis pour les quantités refusées.',
+        );
+      }
+
+      const remainingToReceive =
+        poItem.quantityOrdered -
+        poItem.quantityReceived -
+        (poItem.quantityRefused ?? 0);
+      if (accepted + refused > remainingToReceive) {
+        throw new BadRequestException(
+          `Accepté + refusé (${accepted + refused}) dépasse le reste (${remainingToReceive}) pour le produit #${poItem.productId}.`,
         );
       }
 
@@ -358,7 +377,9 @@ export class ReceiveItemsUseCase {
       receiptItemsData.push({
         purchaseOrderItemId: item.purchaseOrderItemId,
         productId,
-        quantityReceived: item.quantityReceived,
+        quantityReceived: accepted,
+        quantityRefused: refused,
+        refusalReason: refused > 0 ? item.refusalReason!.trim() : null,
         unitCost: item.unitCost,
         batchNumber: item.batchNumber ?? null,
         expiryDate: item.expiryDate ?? null,
@@ -383,20 +404,24 @@ export class ReceiveItemsUseCase {
         purchaseOrderItemId: ri.purchaseOrderItemId,
         productId: ri.productId,
         quantityReceived: ri.quantityReceived,
+        quantityRefused: ri.quantityRefused,
+        refusalReason: ri.refusalReason,
         unitCost: ri.unitCost,
         batchNumber: ri.batchNumber,
         expiryDate: ri.expiryDate,
       })),
     );
 
-    // Apply inventory updates (lots FIFO + mouvements)
+    // Apply inventory updates (lots FIFO + mouvements) — accepté uniquement
     for (const ri of receiptItemsData) {
+      if (ri.quantityReceived <= 0) continue;
+
       const receiptItem = receipt.items?.find(
         (item) => item.purchaseOrderItemId === ri.purchaseOrderItemId,
       );
       const quantityBefore = ri.product.quantityInStock;
 
-      if (ri.quantityReceived > 0 && receiptItem) {
+      if (receiptItem) {
         await this.lots.createLot({
           shopId: auth.shopId,
           productId: ri.productId,
@@ -446,22 +471,26 @@ export class ReceiveItemsUseCase {
       });
     }
 
-    // Recheck total received quantities to update PO status
+    // Reliquat = commandé − reçu − refusé
     const refreshedPo = await this.repo.findPurchaseOrder(auth.shopId, poId);
-    let allReceived = true;
+    let allSettled = true;
     for (const pi of refreshedPo?.items ?? []) {
-      if (pi.quantityReceived < pi.quantityOrdered) {
-        allReceived = false;
+      const remaining =
+        pi.quantityOrdered -
+        pi.quantityReceived -
+        (pi.quantityRefused ?? 0);
+      if (remaining > 0) {
+        allSettled = false;
         break;
       }
     }
 
-    const nextStatus = allReceived ? 'received' : 'partially_received';
+    const nextStatus = allSettled ? 'received' : 'partially_received';
     this.validation.validateStatusTransition(po.status, nextStatus);
 
     await this.repo.updatePurchaseOrderStatus(auth.shopId, poId, nextStatus);
 
-    const historyDetails = allReceived
+    const historyDetails = allSettled
       ? `Réception totale via BR #${dto.receiptNumber}. Commande complète.`
       : `Réception partielle via BR #${dto.receiptNumber}.`;
 
@@ -590,6 +619,8 @@ export class CreateDirectGoodsReceiptUseCase {
     const receiptItemsData: Array<{
       productId: number;
       quantityReceived: number;
+      quantityRefused: number;
+      refusalReason: string | null;
       unitCost: number;
       batchNumber: string | null;
       expiryDate: number | null;
@@ -599,6 +630,22 @@ export class CreateDirectGoodsReceiptUseCase {
     const timestamp = nowMs();
 
     for (const item of dto.items) {
+      const refused = item.quantityRefused ?? 0;
+      const accepted = item.quantityReceived;
+      if (accepted < 0 || refused < 0) {
+        throw new BadRequestException('Quantités invalides.');
+      }
+      if (accepted + refused <= 0) {
+        throw new BadRequestException(
+          'Indiquez une quantité acceptée ou refusée.',
+        );
+      }
+      if (refused > 0 && !item.refusalReason?.trim()) {
+        throw new BadRequestException(
+          'Motif de refus requis pour les quantités refusées.',
+        );
+      }
+
       const product = await this.products.findByIdAndShop(item.productId, auth.shopId);
       if (!product) {
         throw new NotFoundException(`Produit #${item.productId} introuvable.`);
@@ -606,7 +653,9 @@ export class CreateDirectGoodsReceiptUseCase {
 
       receiptItemsData.push({
         productId: item.productId,
-        quantityReceived: item.quantityReceived,
+        quantityReceived: accepted,
+        quantityRefused: refused,
+        refusalReason: refused > 0 ? item.refusalReason!.trim() : null,
         unitCost: item.unitCost,
         batchNumber: item.batchNumber ?? null,
         expiryDate: item.expiryDate ?? null,
@@ -628,6 +677,8 @@ export class CreateDirectGoodsReceiptUseCase {
       receiptItemsData.map((ri) => ({
         productId: ri.productId,
         quantityReceived: ri.quantityReceived,
+        quantityRefused: ri.quantityRefused,
+        refusalReason: ri.refusalReason,
         unitCost: ri.unitCost,
         batchNumber: ri.batchNumber,
         expiryDate: ri.expiryDate,
@@ -635,12 +686,14 @@ export class CreateDirectGoodsReceiptUseCase {
     );
 
     for (const ri of receiptItemsData) {
+      if (ri.quantityReceived <= 0) continue;
+
       const receiptItem = receipt.items?.find(
         (item) => item.productId === ri.productId,
       );
       const quantityBefore = ri.product.quantityInStock;
 
-      if (ri.quantityReceived > 0 && receiptItem) {
+      if (receiptItem) {
         await this.lots.createLot({
           shopId: auth.shopId,
           productId: ri.productId,

@@ -61,6 +61,7 @@ export interface PurchaseOrderItem {
   productName?: string;
   quantityOrdered: number;
   quantityReceived: number;
+  quantityRefused: number;
   unitCost: number;
   discount: number;
   tax: number;
@@ -94,6 +95,8 @@ export interface PurchaseReceiptItem {
   productId: number;
   productName?: string;
   quantityReceived: number;
+  quantityRefused: number;
+  refusalReason: string | null;
   unitCost: number;
   batchNumber: string | null;
   expiryDate: number | null;

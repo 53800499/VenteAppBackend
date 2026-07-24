@@ -225,10 +225,24 @@ export class CreateReceiptItemDto {
   @Min(1)
   productId?: number;
 
-  @ApiProperty({ example: 50 })
+  @ApiProperty({ example: 50, description: 'Quantité acceptée (entre en stock)' })
   @IsInt()
-  @Min(1)
+  @Min(0)
   quantityReceived: number;
+
+  @ApiPropertyOptional({ example: 5, description: 'Quantité refusée' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantityRefused?: number;
+
+  @ApiPropertyOptional({
+    example: 'breakage',
+    description: 'Motif si quantityRefused > 0',
+  })
+  @IsOptional()
+  @IsString()
+  refusalReason?: string;
 
   @ApiProperty({ example: 5000 })
   @IsInt()
@@ -274,10 +288,24 @@ export class CreateDirectReceiptItemDto {
   @Min(1)
   productId: number;
 
-  @ApiProperty({ example: 50 })
+  @ApiProperty({ example: 50, description: 'Quantité acceptée (entre en stock)' })
   @IsInt()
-  @Min(1)
+  @Min(0)
   quantityReceived: number;
+
+  @ApiPropertyOptional({ example: 5, description: 'Quantité refusée' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantityRefused?: number;
+
+  @ApiPropertyOptional({
+    example: 'breakage',
+    description: 'Motif si quantityRefused > 0',
+  })
+  @IsOptional()
+  @IsString()
+  refusalReason?: string;
 
   @ApiProperty({ example: 5000 })
   @IsInt()
