@@ -49,7 +49,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
-    return (data ?? []).map((row) => this.mapTransfer(row));
+    return this.hydrateTransferRows(data ?? []);
   }
 
   async listIncoming(
@@ -78,7 +78,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
-    return (data ?? []).map((row) => this.mapTransfer(row));
+    return this.hydrateTransferRows(data ?? []);
   }
 
   async findById(id: number): Promise<StockTransfer | null> {
@@ -416,9 +416,7 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
     const { data, error } = await query.order('updated_at', { ascending: false });
 
     if (error) throw new BadRequestException(error.message);
-    // Le filtre qty shipped/received nécessite les items : ici on s'appuie sur
-    // le statut (déjà restrictif). Le client recharge le détail complet au pull.
-    return (data ?? []).map((row) => this.mapTransfer(row));
+    return this.hydrateTransferRows(data ?? []);
   }
 
   async updateItemReceived(
@@ -760,6 +758,247 @@ export class SupabaseStockTransferRepository extends StockTransferRepository {
       });
     }
     return receipts;
+  }
+
+  /**
+   * Charge items / lots / shipments / receipts / events / discrepancies
+   * pour une liste de transferts (évite N× GET détail côté client).
+   */
+  private async hydrateTransferRows(
+    rows: Record<string, any>[],
+  ): Promise<StockTransfer[]> {
+    if (rows.length === 0) return [];
+
+    const transferIds = rows.map((row) => row.id as number);
+
+    const { data: itemRows, error: itemErr } = await this.supabase.db
+      .from('stock_transfer_items')
+      .select(
+        `
+        *,
+        source_product:products!source_product_id ( name ),
+        destination_product:products!destination_product_id ( name )
+      `,
+      )
+      .in('transfer_id', transferIds);
+
+    if (itemErr) throw new BadRequestException(itemErr.message);
+
+    const itemsByTransfer = new Map<number, typeof itemRows>();
+    const itemIds: number[] = [];
+    for (const itemRow of itemRows ?? []) {
+      const transferId = itemRow.transfer_id as number;
+      const bucket = itemsByTransfer.get(transferId) ?? [];
+      bucket.push(itemRow);
+      itemsByTransfer.set(transferId, bucket);
+      itemIds.push(itemRow.id as number);
+    }
+
+    const lotsByItem = new Map<number, ReturnType<typeof this.mapLotLine>[]>();
+    if (itemIds.length > 0) {
+      const { data: lotRows, error: lotErr } = await this.supabase.db
+        .from('stock_transfer_lot_lines')
+        .select('*')
+        .in('transfer_item_id', itemIds);
+      if (lotErr) throw new BadRequestException(lotErr.message);
+      for (const lotRow of lotRows ?? []) {
+        const itemId = lotRow.transfer_item_id as number;
+        const bucket = lotsByItem.get(itemId) ?? [];
+        bucket.push(this.mapLotLine(lotRow));
+        lotsByItem.set(itemId, bucket);
+      }
+    }
+
+    const [
+      shipmentsByTransfer,
+      receiptsByTransfer,
+      eventsByTransfer,
+      discrepanciesByTransfer,
+    ] = await Promise.all([
+      this.listShipmentsForTransfers(transferIds),
+      this.listReceiptsForTransfers(transferIds),
+      this.listEventsForTransfers(transferIds),
+      this.listDiscrepanciesForTransfers(transferIds),
+    ]);
+
+    return rows.map((row) => {
+      const transferId = row.id as number;
+      const items = (itemsByTransfer.get(transferId) ?? []).map((itemRow) =>
+        this.mapItem(itemRow, lotsByItem.get(itemRow.id as number) ?? []),
+      );
+      return this.mapTransfer(
+        row,
+        items,
+        shipmentsByTransfer.get(transferId) ?? [],
+        receiptsByTransfer.get(transferId) ?? [],
+        eventsByTransfer.get(transferId) ?? [],
+        discrepanciesByTransfer.get(transferId) ?? [],
+      );
+    });
+  }
+
+  private async listShipmentsForTransfers(transferIds: number[]) {
+    const byTransfer = new Map<number, Awaited<ReturnType<SupabaseStockTransferRepository['listShipments']>>>();
+    if (transferIds.length === 0) return byTransfer;
+
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_shipments')
+      .select('*')
+      .in('transfer_id', transferIds)
+      .order('shipped_at', { ascending: true });
+    if (error) throw new BadRequestException(error.message);
+
+    for (const row of data ?? []) {
+      const transferId = row.transfer_id as number;
+      const bucket = byTransfer.get(transferId) ?? [];
+      bucket.push({
+        id: row.id as number,
+        transferId,
+        reference: row.reference as string,
+        label: row.label as string,
+        notes: (row.notes as string | null) ?? null,
+        driverName: (row.driver_name as string | null) ?? null,
+        vehiclePlate: (row.vehicle_plate as string | null) ?? null,
+        shippedBy: row.shipped_by as number,
+        shippedAt: row.shipped_at as number,
+      });
+      byTransfer.set(transferId, bucket);
+    }
+    return byTransfer;
+  }
+
+  private async listEventsForTransfers(transferIds: number[]) {
+    const byTransfer = new Map<number, Awaited<ReturnType<SupabaseStockTransferRepository['listEvents']>>>();
+    if (transferIds.length === 0) return byTransfer;
+
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_events')
+      .select('*')
+      .in('transfer_id', transferIds)
+      .order('created_at', { ascending: true });
+    if (error) throw new BadRequestException(error.message);
+
+    for (const row of data ?? []) {
+      const transferId = row.transfer_id as number;
+      const bucket = byTransfer.get(transferId) ?? [];
+      bucket.push({
+        id: row.id as number,
+        transferId,
+        shopId: row.shop_id as number,
+        eventType: row.event_type as string,
+        actorUserId: row.actor_user_id as number,
+        notes: (row.notes as string | null) ?? null,
+        payload: (row.payload as Record<string, unknown> | null) ?? null,
+        createdAt: row.created_at as number,
+      });
+      byTransfer.set(transferId, bucket);
+    }
+    return byTransfer;
+  }
+
+  private async listDiscrepanciesForTransfers(transferIds: number[]) {
+    const byTransfer = new Map<
+      number,
+      Awaited<ReturnType<SupabaseStockTransferRepository['listDiscrepancies']>>
+    >();
+    if (transferIds.length === 0) return byTransfer;
+
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_discrepancies')
+      .select('*')
+      .in('transfer_id', transferIds)
+      .order('created_at', { ascending: true });
+    if (error) throw new BadRequestException(error.message);
+
+    for (const row of data ?? []) {
+      const transferId = row.transfer_id as number;
+      const bucket = byTransfer.get(transferId) ?? [];
+      bucket.push({
+        id: row.id as number,
+        transferId,
+        transferItemId: row.transfer_item_id as number,
+        quantity: row.quantity as number,
+        reason: row.reason as string,
+        resolution: row.resolution as string,
+        notes: (row.notes as string | null) ?? null,
+        resolvedBy: row.resolved_by as number,
+        resolvedAt: row.resolved_at as number,
+        createdAt: row.created_at as number,
+      });
+      byTransfer.set(transferId, bucket);
+    }
+    return byTransfer;
+  }
+
+  private async listReceiptsForTransfers(transferIds: number[]) {
+    const byTransfer = new Map<
+      number,
+      Awaited<ReturnType<SupabaseStockTransferRepository['listReceipts']>>
+    >();
+    if (transferIds.length === 0) return byTransfer;
+
+    const { data, error } = await this.supabase.db
+      .from('stock_transfer_receipts')
+      .select('*')
+      .in('transfer_id', transferIds)
+      .order('received_at', { ascending: false });
+    if (error) throw new BadRequestException(error.message);
+
+    const receiptRows = data ?? [];
+    const receiptIds = receiptRows.map((row) => row.id as number);
+    const itemsByReceipt = new Map<
+      number,
+      {
+        id: number;
+        receiptId: number;
+        transferItemId: number;
+        quantityReceived: number;
+        quantityRefused: number;
+        refusalReason: string | null;
+        refusalResolution: string | null;
+      }[]
+    >();
+
+    if (receiptIds.length > 0) {
+      const { data: itemRows, error: itemErr } = await this.supabase.db
+        .from('stock_transfer_receipt_items')
+        .select('*')
+        .in('receipt_id', receiptIds);
+      if (itemErr) throw new BadRequestException(itemErr.message);
+      for (const itemRow of itemRows ?? []) {
+        const receiptId = itemRow.receipt_id as number;
+        const bucket = itemsByReceipt.get(receiptId) ?? [];
+        bucket.push({
+          id: itemRow.id as number,
+          receiptId,
+          transferItemId: itemRow.transfer_item_id as number,
+          quantityReceived: itemRow.quantity_received as number,
+          quantityRefused: (itemRow.quantity_refused as number | null) ?? 0,
+          refusalReason: (itemRow.refusal_reason as string | null) ?? null,
+          refusalResolution:
+            (itemRow.refusal_resolution as string | null) ?? null,
+        });
+        itemsByReceipt.set(receiptId, bucket);
+      }
+    }
+
+    for (const row of receiptRows) {
+      const transferId = row.transfer_id as number;
+      const receiptId = row.id as number;
+      const bucket = byTransfer.get(transferId) ?? [];
+      bucket.push({
+        id: receiptId,
+        transferId,
+        shipmentId: (row.shipment_id as number | null) ?? null,
+        reference: row.reference as string,
+        notes: (row.notes as string | null) ?? null,
+        receivedBy: row.received_by as number,
+        receivedAt: row.received_at as number,
+        items: itemsByReceipt.get(receiptId) ?? [],
+      });
+      byTransfer.set(transferId, bucket);
+    }
+    return byTransfer;
   }
 
   private mapTransfer(
