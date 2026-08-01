@@ -9,6 +9,8 @@ import { PaymentRepository } from './domain/repositories/payment.repository';
 import { PaymentReceiptService } from './domain/services/payment-receipt.service';
 import { SupabasePaymentRepository } from './infrastructure/repositories/payment.repository';
 import { PaymentsController } from './presentation/controllers/payments.controller';
+import { FedaPayController } from './presentation/controllers/fedapay.controller';
+import { FedaPayService } from './services/fedapay.service';
 
 @Module({
   imports: [
@@ -18,13 +20,14 @@ import { PaymentsController } from './presentation/controllers/payments.controll
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, FedaPayController],
   providers: [
     { provide: PaymentRepository, useClass: SupabasePaymentRepository },
     PaymentReceiptService,
+    FedaPayService,
     ListPaymentsUseCase,
     GetPaymentUseCase,
   ],
-  exports: [PaymentRepository, PaymentReceiptService],
+  exports: [PaymentRepository, PaymentReceiptService, FedaPayService],
 })
 export class PaymentsModule {}
