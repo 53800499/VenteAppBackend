@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
+import { IdentityRepository } from '../../../identity/domain/repositories/identity.repository';
 import { PermissionService } from '../../../../core/security/permission.service';
 import { LockoutPolicyService } from '../../../../core/security/lockout-policy.service';
 import { PinHasherService } from '../../../../core/security/pin-hasher.service';
@@ -25,7 +26,10 @@ describe('LoginWithPinUseCase', () => {
   let users: jest.Mocked<Pick<UserRepository, 'updateInShop'>>;
 
   beforeEach(async () => {
-    users = { updateInShop: jest.fn().mockResolvedValue(undefined) };
+    users = {
+      updateInShop: jest.fn().mockResolvedValue(undefined),
+      findByIdAndShop: jest.fn().mockResolvedValue(baseUser),
+    } as unknown as jest.Mocked<Pick<UserRepository, 'updateInShop'>>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -33,6 +37,12 @@ describe('LoginWithPinUseCase', () => {
         LockoutPolicyService,
         PinHasherService,
         AuthPresenter,
+        {
+          provide: IdentityRepository,
+          useValue: {
+            resolveContext: jest.fn().mockResolvedValue(null),
+          },
+        },
         {
           provide: PermissionService,
           useValue: {
