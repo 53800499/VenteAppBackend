@@ -41,6 +41,8 @@ import { SupabaseUserSessionRepository } from './infrastructure/repositories/use
 import { AuthController } from './presentation/controllers/auth.controller';
 import { AuthPresenter } from './presentation/presenters/auth.presenter';
 
+import { DeviceIdentityService } from './domain/services/device-identity.service';
+
 @Module({
   imports: [
     CoreModule,
@@ -68,6 +70,7 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     AuthTokenService,
     UserResolverService,
     MembershipResolverService,
+    DeviceIdentityService,
     WhatsappOtpGateway,
     AuthPresenter,
     GetLockScreenUseCase,
@@ -89,6 +92,6 @@ import { AuthPresenter } from './presentation/presenters/auth.presenter';
     SwitchShopUseCase,
     SessionGuard,
   ],
-  exports: [UserSessionRepository, AuthTokenService, SessionGuard, TouchSessionUseCase],
+  exports: [UserSessionRepository, AuthTokenService, DeviceIdentityService, SessionGuard, TouchSessionUseCase],
 })
 export class AuthModule {}

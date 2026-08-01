@@ -99,6 +99,10 @@ import { ValidateSetupOwnerUseCase } from '../../application/use-cases/validate-
 import { GetIdentityContextUseCase } from '../../../identity/application/use-cases/get-identity-context.use-case';
 import { IdentityContextResponseDto } from '../../../identity/application/dto/identity.dto';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AUTH_EVENTS, DeviceRestoredEvent } from '../../../../core/events/auth.events';
+import { DeviceIdentityService } from '../../domain/services/device-identity.service';
+
 @ApiTags('Authentification')
 @Controller('auth')
 @UseInterceptors(TransformResponseInterceptor)
@@ -124,6 +128,8 @@ export class AuthController {
     private readonly getIdentityContext: GetIdentityContextUseCase,
     private readonly tenantContext: TenantContextService,
     private readonly tenantDb: TenantDatabaseService,
+    private readonly deviceIdentity: DeviceIdentityService,
+    private readonly events: EventEmitter2,
   ) {}
 
   private async bindTenant(shopId: number) {
@@ -450,5 +456,27 @@ export class AuthController {
   @ApiUnauthorizedResponse({ type: ApiErrorDto, description: 'Session invalide ou expirée' })
   touchSessionHandler(@CurrentAuth() auth: AuthContext) {
     return this.touchSession.execute(auth.sessionId, auth.shopId);
+  }
+
+  @Post('device-restore')
+  @ApiOperation({
+    summary: 'Restauration silencieuse par empreinte d\'appareil',
+    description: 'Valide le challenge cryptographique de l\'appareil et émet de nouveaux jetons de session sans exiger de code PIN.',
+  })
+  @ApiOkResponse({ type: TokenRefreshResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorDto, description: 'Signature d\'appareil invalide ou expirée' })
+  async deviceRestoreHandler(
+    @Body() dto: { deviceId: string; timestamp: number; signature: string; refreshToken?: string },
+  ) {
+    const isValid = this.deviceIdentity.verifyDeviceSignature(dto);
+    if (!isValid) {
+      throw new ForbiddenException('Preuve d\'appareil invalide ou expirée.');
+    }
+    if (dto.refreshToken) {
+      const result = await this.refreshTokens.execute(dto.refreshToken);
+      this.events.emit(AUTH_EVENTS.DEVICE_RESTORED, new DeviceRestoredEvent(dto.deviceId, dto.timestamp));
+      return result;
+    }
+    throw new ForbiddenException('Jeton de rafraîchissement d\'appareil requis.');
   }
 }

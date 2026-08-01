@@ -98,11 +98,15 @@ export class ListDeviceSessionsUseCase {
   }
 }
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AUTH_EVENTS, DeviceRevokedEvent } from '../../../../core/events/auth.events';
+
 @Injectable()
 export class RevokeDeviceSessionUseCase {
   constructor(
     private readonly sessions: UserSessionRepository,
     private readonly authTokenService: AuthTokenService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async execute(auth: AuthContext, sessionId: string) {
@@ -119,6 +123,7 @@ export class RevokeDeviceSessionUseCase {
     }
 
     await this.authTokenService.revokeSession(sessionId);
+    this.events.emit(AUTH_EVENTS.DEVICE_REVOKED, new DeviceRevokedEvent(sessionId, auth.shopId));
     return { id: sessionId, revoked: true };
   }
 }

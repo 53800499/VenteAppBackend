@@ -3,6 +3,8 @@ import { OnEvent } from '@nestjs/event-emitter';
 import {
   AUTH_EVENTS,
   AccountLockedEvent,
+  DeviceRestoredEvent,
+  DeviceRevokedEvent,
   EmergencyUnlockEvent,
   PinLoginFailedEvent,
   PinLoginSucceededEvent,
@@ -40,5 +42,15 @@ export class AuthEventsListener {
   @OnEvent(AUTH_EVENTS.SETUP_COMPLETED)
   onSetupCompleted(event: SetupCompletedEvent): void {
     this.logger.log(`Installation terminée — user=${event.userId} shop=${event.shopId}`);
+  }
+
+  @OnEvent(AUTH_EVENTS.DEVICE_RESTORED)
+  onDeviceRestored(event: DeviceRestoredEvent): void {
+    this.logger.log(`Session d'appareil restaurée silencieusement — deviceId=${event.deviceId}`);
+  }
+
+  @OnEvent(AUTH_EVENTS.DEVICE_REVOKED)
+  onDeviceRevoked(event: DeviceRevokedEvent): void {
+    this.logger.warn(`Session d'appareil révoquée à distance — sessionId=${event.sessionId} shop=${event.shopId}`);
   }
 }

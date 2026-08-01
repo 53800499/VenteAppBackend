@@ -4,6 +4,8 @@ export const AUTH_EVENTS = {
   ACCOUNT_LOCKED: 'auth.account_locked',
   EMERGENCY_UNLOCK: 'auth.emergency_unlock',
   SETUP_COMPLETED: 'auth.setup_completed',
+  DEVICE_RESTORED: 'auth.device_restored',
+  DEVICE_REVOKED: 'auth.device_revoked',
 } as const;
 
 export class PinLoginSucceededEvent {
@@ -38,6 +40,20 @@ export class EmergencyUnlockEvent {
 export class SetupCompletedEvent {
   constructor(
     public readonly userId: number,
+    public readonly shopId: number,
+  ) {}
+}
+
+export class DeviceRestoredEvent {
+  constructor(
+    public readonly deviceId: string,
+    public readonly timestamp: number,
+  ) {}
+}
+
+export class DeviceRevokedEvent {
+  constructor(
+    public readonly sessionId: string,
     public readonly shopId: number,
   ) {}
 }
