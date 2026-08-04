@@ -57,12 +57,12 @@ export class SettingsController {
     return this.scopeResolver.resolveEffectiveSnapshot({
       shopId: String(auth.shopId),
       shopSettings: {
-        'company.name': rawSettings.shopName,
-        'company.phone': rawSettings.shopPhone,
-        'company.address': rawSettings.shopAddress,
-        'inventory.defaultAlertThreshold': rawSettings.defaultAlertThreshold,
-        'security.autoLockMinutes': rawSettings.autoLockMinutes,
-        'receipts.receiptFooter': rawSettings.receiptFooter,
+        'company.name': rawSettings.shop.name,
+        'company.phone': rawSettings.shop.phone,
+        'company.address': rawSettings.shop.address,
+        'inventory.defaultAlertThreshold': rawSettings.inventory.defaultAlertThreshold,
+        'security.autoLockMinutes': rawSettings.security.autoLockMinutes,
+        'receipts.receiptFooter': rawSettings.receipts.footer,
       },
       version: 1,
     });
