@@ -23,11 +23,11 @@ export class FedaPayService {
   ) {}
 
   private get secretKey(): string {
-    return this.configService.get<string>('FEDAPAY_SECRET_KEY') || 'sk_sandbox_dummy';
+    return this.configService.get<string>('FEDAPAY_SECRET_KEY') || '';
   }
 
   private get environment(): string {
-    return this.configService.get<string>('FEDAPAY_ENVIRONMENT') || 'sandbox';
+    return this.configService.get<string>('FEDAPAY_ENVIRONMENT') || 'live';
   }
 
   private get baseUrl(): string {

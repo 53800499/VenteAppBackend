@@ -25,6 +25,10 @@ import {
 } from './application/use-cases/rbac.use-cases';
 import { RbacPermissionValidator } from './domain/services/rbac-permission.validator';
 import { RbacController } from './presentation/controllers/rbac.controller';
+import {
+  PermissionsCompatibilityController,
+  RolesCompatibilityController,
+} from './presentation/controllers/roles-compatibility.controller';
 import { RbacPersistenceModule } from './rbac-persistence.module';
 
 @Module({
@@ -37,7 +41,11 @@ import { RbacPersistenceModule } from './rbac-persistence.module';
     AuthorizationGuardsModule,
     AuditPersistenceModule,
   ],
-  controllers: [RbacController],
+  controllers: [
+    RbacController,
+    RolesCompatibilityController,
+    PermissionsCompatibilityController,
+  ],
   providers: [
     RbacPermissionValidator,
     GetRolesCatalogUseCase,

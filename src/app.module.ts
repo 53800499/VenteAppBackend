@@ -26,12 +26,14 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
 import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
     CoreModule,
     TenantsModule,
     AuthModule,
+    AdminModule,
     ShopsModule,
     UsersModule,
     RbacModule,

@@ -11,6 +11,8 @@ import {
   UpdateSettingsUseCase,
   UpdateSyncSettingsUseCase,
 } from './application/use-cases/settings.use-cases';
+import { SettingsRegistryService } from './domain/services/settings-registry.service';
+import { SettingsScopeResolverService } from './domain/services/settings-scope-resolver.service';
 import { SettingsValidationService } from './domain/services/settings-validation.service';
 import { SettingsController } from './presentation/controllers/settings.controller';
 
@@ -26,10 +28,16 @@ import { SettingsController } from './presentation/controllers/settings.controll
   controllers: [SettingsController],
   providers: [
     SettingsValidationService,
+    SettingsRegistryService,
+    SettingsScopeResolverService,
     GetSettingsUseCase,
     UpdateSettingsUseCase,
     RecordBackupUseCase,
     UpdateSyncSettingsUseCase,
+  ],
+  exports: [
+    SettingsRegistryService,
+    SettingsScopeResolverService,
   ],
 })
 export class SettingsModule {}

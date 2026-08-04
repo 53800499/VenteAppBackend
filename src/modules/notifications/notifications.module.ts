@@ -14,6 +14,7 @@ import { NotificationRepository } from './domain/repositories/notification.repos
 import { NotificationFeedService } from './domain/services/notification-feed.service';
 import { SupabaseNotificationRepository } from './infrastructure/repositories/notification.repository';
 import { NotificationsController } from './presentation/controllers/notifications.controller';
+import { RemindersController } from './presentation/controllers/reminders.controller';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { NotificationsController } from './presentation/controllers/notification
     forwardRef(() => AuthModule),
     forwardRef(() => UsersModule),
   ],
-  controllers: [NotificationsController],
+  controllers: [NotificationsController, RemindersController],
   providers: [
     { provide: NotificationRepository, useClass: SupabaseNotificationRepository },
     NotificationFeedService,

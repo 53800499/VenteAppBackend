@@ -42,7 +42,22 @@ export class SessionGuard implements CanActivate {
     const bearer = requireBearerJwt(extractBearerToken(headers));
     const payload = await this.authTokenService.verifyAccessToken(bearer);
 
-    const session = await this.sessions.findById(payload.sid);
+    if (payload.isAdmin && !payload.sid) {
+      const activeShopId = extractActiveShopIdHeader(headers) || 1;
+      await this.tenantDb.setShopId(activeShopId);
+      this.tenantContext.setShopId(activeShopId);
+
+      request.authContext = {
+        userId: typeof payload.sub === 'number' ? payload.sub : 0,
+        shopId: activeShopId,
+        role: payload.adminRole || 'SUPER_ADMIN',
+        permissions: ['*'] as any,
+        sessionId: 'admin-session',
+      };
+      return true;
+    }
+
+    const session = await this.sessions.findById(payload.sid!);
     const timestamp = nowMs();
     if (!session || session.isRevoked() || !session.isRefreshActive(timestamp)) {
       throw new UnauthorizedException('Session invalide ou expirée.');

@@ -89,4 +89,24 @@ describe('AuthTokenService', () => {
     sessions.findByRefreshTokenHash.mockResolvedValue(null);
     await expect(service.validateRefreshToken('unknown')).rejects.toThrow(InvalidRefreshTokenException);
   });
+
+  it('valide un jeton utilisateur avec sid', async () => {
+    const payload = await service.verifyAccessToken('valid.user.token');
+    expect(payload.sid).toBe('sid-1');
+  });
+
+  it('valide un jeton administrateur sans sid', async () => {
+    const jwtService = (service as any).jwtService;
+    jwtService.verifyAsync.mockResolvedValueOnce({
+      sub: 'admin-001',
+      email: 'admin@arike.app',
+      isAdmin: true,
+      adminRole: 'SUPER_ADMIN',
+      type: 'access',
+    });
+
+    const payload = await service.verifyAccessToken('valid.admin.token');
+    expect(payload.isAdmin).toBe(true);
+    expect(payload.sid).toBeUndefined();
+  });
 });

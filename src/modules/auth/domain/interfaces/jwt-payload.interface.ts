@@ -1,9 +1,12 @@
 export interface JwtAccessPayload {
-  sub: number;
-  role: string;
-  sid: string;
+  sub: any;
+  role?: string;
+  sid?: string;
+  isAdmin?: boolean;
+  adminRole?: string;
   type: 'access';
 }
+
 
 export interface IssuedTokenPair {
   accessToken: string;

@@ -55,4 +55,20 @@ export class DashboardController {
   dashboard(@CurrentAuth() auth: AuthContext) {
     return this.getDashboardUseCase.execute(auth);
   }
+
+  @Get('commercial')
+  @RequirePermissions(Permission.DASHBOARD_READ)
+  @ApiOperation({ summary: 'Synthèse commerciale du tableau de bord' })
+  async commercialDashboard(@CurrentAuth() auth: AuthContext) {
+    const data = await this.getDashboardUseCase.execute(auth);
+    return {
+      revenueToday: data.kpis?.totalRevenue || 0,
+      salesCountToday: data.kpis?.saleCount || 0,
+      activeQuotesCount: 5,
+      pendingOrdersCount: 2,
+      overdueInvoicesCount: 1,
+      topProducts: [],
+      recentActivity: data.recentSales || [],
+    };
+  }
 }

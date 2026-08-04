@@ -21,6 +21,7 @@ import { UserRepository } from './domain/repositories/user.repository';
 import { RoleAssignmentValidator } from './domain/services/role-assignment.validator';
 import { SupabaseUserRepository } from './infrastructure/repositories/user.repository';
 import { UsersController } from './presentation/controllers/users.controller';
+import { ProfileController } from './presentation/controllers/profile.controller';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { UsersController } from './presentation/controllers/users.controller';
     AuditPersistenceModule,
     AuthorizationGuardsModule,
   ],
-  controllers: [UsersController],
+  controllers: [UsersController, ProfileController],
   providers: [
     { provide: UserRepository, useClass: SupabaseUserRepository },
     UserAccessPolicy,

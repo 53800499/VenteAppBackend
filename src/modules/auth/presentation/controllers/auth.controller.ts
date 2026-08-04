@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  UnauthorizedException,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -20,6 +21,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiProperty,
   ApiQuery,
   ApiSecurity,
   ApiTags,
@@ -98,10 +100,28 @@ import { CheckSetupAvailableUseCase } from '../../application/use-cases/check-se
 import { ValidateSetupOwnerUseCase } from '../../application/use-cases/validate-setup-owner.use-case';
 import { GetIdentityContextUseCase } from '../../../identity/application/use-cases/get-identity-context.use-case';
 import { IdentityContextResponseDto } from '../../../identity/application/dto/identity.dto';
+import { AuthTokenService } from '../../domain/services/auth-token.service';
+import * as bcrypt from 'bcrypt';
 
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AUTH_EVENTS, DeviceRestoredEvent } from '../../../../core/events/auth.events';
 import { DeviceIdentityService } from '../../domain/services/device-identity.service';
+
+export class LoginEmailPasswordDto {
+  @ApiProperty({ example: 'admin@arike.app', description: 'Email de connexion' })
+  @IsString({ message: 'L\'email doit être une chaîne de caractères.' })
+  @IsNotEmpty({ message: 'L\'email est obligatoire.' })
+  email!: string;
+
+  @ApiProperty({ example: '12345678', description: 'Mot de passe' })
+  @IsString({ message: 'Le mot de passe doit être une chaîne de caractères.' })
+  @IsNotEmpty({ message: 'Le mot de passe est obligatoire.' })
+  password!: string;
+
+  @IsOptional()
+  rememberMe?: boolean;
+}
 
 @ApiTags('Authentification')
 @Controller('auth')
@@ -130,11 +150,122 @@ export class AuthController {
     private readonly tenantDb: TenantDatabaseService,
     private readonly deviceIdentity: DeviceIdentityService,
     private readonly events: EventEmitter2,
+    private readonly authTokenService: AuthTokenService,
   ) {}
 
   private async bindTenant(shopId: number) {
     this.tenantContext.setShopId(shopId);
     await this.tenantDb.setShopId(shopId);
+  }
+
+  @Post('login')
+  @ApiOperation({ summary: 'Connexion email / mot de passe' })
+  async loginEmailPassword(@Body() dto: LoginEmailPasswordDto) {
+    const email = (dto.email || '').trim().toLowerCase();
+    const password = dto.password || '';
+
+    const db = this.tenantDb.getAdminClient();
+
+    // 1. Chercher dans admin_users (Back-office Admins)
+    const { data: dbAdmin } = await db
+      .from('admin_users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (dbAdmin) {
+      if (!dbAdmin.is_active) {
+        throw new UnauthorizedException('Compte administrateur désactivé.');
+      }
+
+      let isValidPassword = false;
+      if (!dbAdmin.password_hash?.startsWith('$2') && dbAdmin.password_hash === password) {
+        isValidPassword = true;
+      } else {
+        isValidPassword = await bcrypt.compare(password, dbAdmin.password_hash || '');
+      }
+
+      if (!isValidPassword) {
+        throw new UnauthorizedException('Identifiants administrateur invalides.');
+      }
+
+      const payload = {
+        sub: dbAdmin.id,
+        email: dbAdmin.email,
+        isAdmin: true,
+        adminRole: dbAdmin.role || 'SUPER_ADMIN',
+        type: 'access',
+      };
+
+      const accessToken = await this.authTokenService.signAccessToken(payload as any);
+      const refreshToken = await this.authTokenService.signRefreshToken(payload as any);
+
+      return {
+        user: {
+          id: dbAdmin.id,
+          email: dbAdmin.email,
+          firstName: dbAdmin.full_name?.split(' ')[0] || 'Admin',
+          lastName: dbAdmin.full_name?.split(' ').slice(1).join(' ') || '',
+          tenantId: 'admin-tenant',
+          tenantType: 'company',
+          roles: [dbAdmin.role || 'SUPER_ADMIN'],
+          permissions: ['*'],
+        },
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        accessToken,
+      };
+    }
+
+    // 2. Chercher dans users (Boutiques / Dirigeants)
+    const { data: dbUser } = await db
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (dbUser) {
+      let isValidPassword = false;
+      if (dbUser.password_hash) {
+        if (!dbUser.password_hash.startsWith('$2') && dbUser.password_hash === password) {
+          isValidPassword = true;
+        } else {
+          isValidPassword = await bcrypt.compare(password, dbUser.password_hash);
+        }
+      }
+
+      if (isValidPassword) {
+        const payload = {
+          sub: dbUser.id,
+          email: dbUser.email,
+          role: dbUser.role || 'DIRIGEANT',
+          shopId: dbUser.shop_id,
+          type: 'access',
+        };
+
+        const accessToken = await this.authTokenService.signAccessToken(payload as any);
+        const refreshToken = await this.authTokenService.signRefreshToken(payload as any);
+
+        return {
+          user: {
+            id: String(dbUser.id),
+            email: dbUser.email,
+            firstName: dbUser.full_name?.split(' ')[0] || 'Utilisateur',
+            lastName: dbUser.full_name?.split(' ').slice(1).join(' ') || '',
+            tenantId: `tenant-${dbUser.shop_id || 1}`,
+            tenantType: 'company',
+            roles: [dbUser.role || 'CEO'],
+            permissions: ['*'],
+          },
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          accessToken,
+          refreshToken,
+        };
+      }
+    }
+
+    throw new UnauthorizedException('Identifiants de connexion invalides.');
   }
 
   @Get('lock-screen/:shopId')

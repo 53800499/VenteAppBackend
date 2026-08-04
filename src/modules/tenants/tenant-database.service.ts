@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 
 @Injectable()
@@ -6,6 +7,10 @@ export class TenantDatabaseService {
   private readonly logger = new Logger(TenantDatabaseService.name);
 
   constructor(private readonly supabase: SupabaseService) {}
+
+  getAdminClient(): SupabaseClient {
+    return this.supabase.db;
+  }
 
   async setShopId(shopId: number): Promise<void> {
     const { error } = await this.supabase.db.rpc('app_set_shop_id', { p_shop_id: shopId });

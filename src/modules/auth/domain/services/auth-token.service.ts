@@ -31,6 +31,23 @@ export class AuthTokenService {
     return createHash('sha256').update(rawToken).digest('hex');
   }
 
+  async signAccessToken(payload: Record<string, any>): Promise<string> {
+    return this.jwtService.signAsync(payload, {
+      expiresIn: this.configService.get<number>('auth.jwtAccessTtlSeconds', 28800),
+      issuer: this.configService.get<string>('auth.jwtIssuer', 'arike-backoffice'),
+    });
+  }
+
+  async signRefreshToken(payload: Record<string, any>): Promise<string> {
+    return this.jwtService.signAsync(
+      { ...payload, type: 'refresh' },
+      {
+        expiresIn: this.configService.get<number>('auth.jwtRefreshTtlDays', 30) * 86400,
+        issuer: this.configService.get<string>('auth.jwtIssuer', 'arike-backoffice'),
+      },
+    );
+  }
+
   async bootstrapSession(
     user: User,
     targetShopId: number,
@@ -86,7 +103,7 @@ export class AuthTokenService {
   async verifyAccessToken(token: string): Promise<JwtAccessPayload> {
     try {
       const payload = await this.jwtService.verifyAsync<JwtAccessPayload>(token);
-      if (payload.type !== 'access' || !payload.sid) {
+      if (payload.type !== 'access' || (!payload.sid && !payload.isAdmin)) {
         throw new InvalidAccessTokenException();
       }
       return payload;
@@ -131,7 +148,7 @@ export class AuthTokenService {
         type: 'access',
       } satisfies JwtAccessPayload,
       {
-        expiresIn: this.configService.get<number>('auth.jwtAccessTtlSeconds', 900),
+        expiresIn: this.configService.get<number>('auth.jwtAccessTtlSeconds', 2592000),
         issuer: this.configService.get<string>('auth.jwtIssuer', 'venteapp-api'),
       },
     );
@@ -146,7 +163,7 @@ export class AuthTokenService {
   }
 
   private getAccessTtlMs(): number {
-    return this.configService.get<number>('auth.jwtAccessTtlSeconds', 900) * 1000;
+    return this.configService.get<number>('auth.jwtAccessTtlSeconds', 2592000) * 1000;
   }
 
   private getRefreshTtlMs(): number {
