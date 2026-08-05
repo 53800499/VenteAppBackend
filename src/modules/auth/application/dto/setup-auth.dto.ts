@@ -50,6 +50,11 @@ export class SetupOwnerDto {
   @IsNotEmpty()
   @MinLength(8)
   ownerPhone: string;
+
+  @ApiPropertyOptional({ example: 'ESSENTIEL', description: 'Code du forfait SaaS choisi' })
+  @IsOptional()
+  @IsString()
+  planCode?: string;
 }
 
 export class EmergencyUnlockDto {

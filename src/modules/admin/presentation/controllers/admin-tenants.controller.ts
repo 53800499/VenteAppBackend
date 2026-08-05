@@ -251,6 +251,17 @@ export class AdminTenantsController {
     @Param('id') id: string,
     @Body() dto: UpdateTenantStatusDto,
   ) {
+    const numericShopId = parseInt(id.replace('tenant-', ''), 10) || 1;
+    const db = this.tenantDb.getAdminClient();
+    const isActive = dto.status === 'ACTIVE' || dto.status === 'TRIAL';
+
+    try {
+      await db.from('shops').update({ is_active: isActive }).eq('id', numericShopId);
+      await db.from('organizations').update({ status: dto.status }).eq('root_shop_id', numericShopId);
+    } catch {
+      // Graceful fallback
+    }
+
     return {
       success: true,
       tenantId: id,

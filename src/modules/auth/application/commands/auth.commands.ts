@@ -13,6 +13,7 @@ export interface SetupOwnerCommand {
   shopAddress?: string;
   shopPhone?: string;
   ownerPhone: string;
+  planCode?: string;
 }
 
 export interface EmergencyUnlockCommand {

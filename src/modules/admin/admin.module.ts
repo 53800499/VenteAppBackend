@@ -14,6 +14,7 @@ import { AdminDevicesController } from './presentation/controllers/admin-devices
 import { AdminSyncController } from './presentation/controllers/admin-sync.controller';
 import { AdminAuditController } from './presentation/controllers/admin-audit.controller';
 import { AdminUsersController } from './presentation/controllers/admin-users.controller';
+import { AdminSettingsController } from './presentation/controllers/admin-settings.controller';
 import { AdminUserService } from './domain/services/admin-user.service';
 import { AdminUserRepository } from './infrastructure/repositories/admin-user.repository';
 
@@ -42,6 +43,7 @@ import { AdminUserRepository } from './infrastructure/repositories/admin-user.re
     AdminSyncController,
     AdminAuditController,
     AdminUsersController,
+    AdminSettingsController,
   ],
   providers: [
     LicenseSignerService,

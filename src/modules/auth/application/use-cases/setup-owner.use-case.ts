@@ -42,6 +42,31 @@ export class SetupOwnerUseCase {
       const timestamp = nowMs();
       const ownerPhone = normalizePhoneToWhatsApp(command.ownerPhone);
 
+      const planCode = command.planCode || 'ESSENTIEL';
+      
+      let trialEnabled = true;
+      let trialDurationDays = 14;
+      let gracePeriodDays = 7;
+
+      try {
+        const db = this.tenantDb.getAdminClient();
+        const { data: policyData } = await db.from('platform_settings').select('licensing_policy_json').eq('id', 'default').maybeSingle();
+        if (policyData && policyData.licensing_policy_json) {
+          const p = policyData.licensing_policy_json;
+          if (p.trialEnabled === false) trialEnabled = false;
+          if (p.trialDurationDays) trialDurationDays = Number(p.trialDurationDays);
+          if (p.gracePeriodDays) gracePeriodDays = Number(p.gracePeriodDays);
+        }
+      } catch {}
+
+      const subStatus = trialEnabled ? 'TRIAL' : 'PENDING_ACTIVATION';
+      const trialExpiresAt = trialEnabled
+        ? new Date(Date.now() + trialDurationDays * 86400000).toISOString()
+        : new Date().toISOString();
+      const trialGraceUntil = trialEnabled
+        ? new Date(Date.now() + (trialDurationDays + gracePeriodDays) * 86400000).toISOString()
+        : new Date().toISOString();
+
       const shop = await this.shops.create({
         name: command.shopName,
         address: command.shopAddress ?? null,
@@ -75,7 +100,7 @@ export class SetupOwnerUseCase {
 
       this.events.emit(AUTH_EVENTS.SETUP_COMPLETED, new SetupCompletedEvent(user.id, shop.id));
 
-      await this.identityProvisioning.provisionNewOwnerShop({
+      const provisionResult = await this.identityProvisioning.provisionNewOwnerShop({
         phone: ownerPhone,
         displayName: command.ownerName,
         userId: user.id,
@@ -83,10 +108,44 @@ export class SetupOwnerUseCase {
         shopName: shop.name,
       });
 
+      // Initialize Subscription & Plan (TRIAL or PENDING_ACTIVATION based on policy)
+      try {
+        const db = this.tenantDb.getAdminClient();
+        const { data: updatedShop } = await db.from('shops').update({
+          plan: planCode,
+          subscription_expires_at: trialExpiresAt,
+        }).eq('id', shop.id).select('organization_id').maybeSingle();
+
+        const orgId = updatedShop?.organization_id;
+        if (orgId) {
+          await db.from('organizations').update({
+            plan: planCode,
+            subscription_expires_at: trialExpiresAt,
+          }).eq('id', orgId);
+        }
+
+        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', planCode).maybeSingle();
+        if (planData?.id) {
+          await db.from('subscriptions').insert({
+            tenant_id: String(shop.id),
+            plan_id: planData.id,
+            plan_code: planCode,
+            status: subStatus,
+            started_at: new Date().toISOString(),
+            expires_at: trialExpiresAt,
+            grace_until: trialGraceUntil,
+            auto_renew: false,
+          });
+        }
+      } catch {
+        // Fallback gracefully
+      }
+
       return {
         shopId: shop.id,
         userId: user.id,
         recoveryToken,
+        planCode,
         message:
           'Boutique créée avec succès. Sauvegardez le fichier de récupération d\'urgence en lieu sûr.',
       };

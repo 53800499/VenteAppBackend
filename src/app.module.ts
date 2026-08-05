@@ -27,6 +27,7 @@ import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
 import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { SubscriptionsController } from './modules/subscription/subscriptions.controller';
 
 @Module({
   imports: [
@@ -56,7 +57,7 @@ import { AdminModule } from './modules/admin/admin.module';
     StockTransfersModule,
     FxExchangeModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, SubscriptionsController],
   providers: [AppService],
 })
 export class AppModule {}
