@@ -25,6 +25,8 @@ export enum AuditAction {
   SETTINGS_UPDATED = 'settings_updated',
   BACKUP_RECORDED = 'backup_recorded',
   SYNC_SETTINGS_UPDATED = 'sync_settings_updated',
+  SYNC_DISCARDED = 'sync_discarded',
+  SYNC_CORRECTED = 'sync_corrected',
 }
 
 export enum AuditModule {

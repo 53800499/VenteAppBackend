@@ -164,7 +164,14 @@ export class FedaPayService {
 
       const data = await res.json();
       const tx = data.v1?.transaction || data.transaction || data;
-      const status = tx.status;
+      let status = tx.status;
+
+      // En mode Sandbox (environnement sandbox ou clé de test), auto-approuver
+      // immédiatement les transactions de test en attente pour un flux de dev fluide.
+      if ((this.environment === 'sandbox' || this.secretKey.includes('sandbox')) && status === 'pending') {
+        status = 'approved';
+        tx.status = 'approved';
+      }
 
       if (status === 'approved' || status === 'transferred') {
         let metadata = tx.custom_metadata || tx.metadata || {};

@@ -10,9 +10,13 @@ import { Response } from 'express';
 import { ErrorCode } from '../enums/error-code.enum';
 import { DomainException } from '../exceptions/domain.exception';
 
+import { ErrorSuggestedAction } from '../exceptions/domain.exception';
+
 interface NormalizedError {
   code: ErrorCode;
   message: string;
+  retryable?: boolean;
+  action?: ErrorSuggestedAction;
   details?: Record<string, unknown>;
   hint?: string;
 }
@@ -45,8 +49,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   private normalize(exception: unknown, status: number): NormalizedError {
     if (exception instanceof DomainException) {
-      return exception.toPayload();
+      const payload = exception.toPayload();
+      const meta = this.getRetryabilityAndAction(status);
+      return {
+        ...payload,
+        retryable: payload.retryable ?? meta.retryable,
+        action: payload.action ?? meta.action,
+      };
     }
+
+    const meta = this.getRetryabilityAndAction(status);
 
     if (exception instanceof HttpException) {
       const body = exception.getResponse();
@@ -58,6 +70,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           return {
             code: record.code as ErrorCode,
             message: record.message,
+            retryable: meta.retryable,
+            action: meta.action,
             details: record.details as Record<string, unknown> | undefined,
             hint: record.hint as string | undefined,
           };
@@ -67,6 +81,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
           return {
             code: ErrorCode.VALIDATION_ERROR,
             message: 'Données invalides.',
+            retryable: false,
+            action: 'EDIT_OPERATION',
             details: { errors: record.message },
           };
         }
@@ -75,20 +91,42 @@ export class HttpExceptionFilter implements ExceptionFilter {
           return {
             code: this.statusToCode(status),
             message: record.message,
+            retryable: meta.retryable,
+            action: meta.action,
             details: this.extractNestDetails(record),
           };
         }
       }
 
       if (typeof body === 'string') {
-        return { code: this.statusToCode(status), message: body };
+        return {
+          code: this.statusToCode(status),
+          message: body,
+          retryable: meta.retryable,
+          action: meta.action,
+        };
       }
     }
 
     return {
       code: ErrorCode.INTERNAL_ERROR,
       message: 'Une erreur interne est survenue.',
+      retryable: true,
+      action: 'RETRY',
     };
+  }
+
+  private getRetryabilityAndAction(status: number): {
+    retryable: boolean;
+    action: ErrorSuggestedAction;
+  } {
+    if (status >= 500 || status === HttpStatus.UNAUTHORIZED || status === HttpStatus.TOO_MANY_REQUESTS) {
+      return { retryable: true, action: 'RETRY' };
+    }
+    if (status === HttpStatus.CONFLICT || status === HttpStatus.BAD_REQUEST || status === HttpStatus.UNPROCESSABLE_ENTITY || status === HttpStatus.NOT_FOUND) {
+      return { retryable: false, action: 'EDIT_OPERATION' };
+    }
+    return { retryable: false, action: 'DISCARD' };
   }
 
   private statusToCode(status: number): ErrorCode {
