@@ -5,6 +5,7 @@ import { DatabaseModule } from './database/database.module';
 import { EventsModule } from './events/events.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SecurityModule } from './security/security.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SecurityModule } from './security/security.module';
     CacheModule,
     EventsModule,
     MonitoringModule,
+    IdempotencyModule,
   ],
   exports: [
     AppConfigModule,
@@ -22,6 +24,7 @@ import { SecurityModule } from './security/security.module';
     CacheModule,
     EventsModule,
     MonitoringModule,
+    IdempotencyModule,
   ],
 })
 export class CoreModule {}
