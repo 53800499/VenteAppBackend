@@ -40,6 +40,14 @@ export class FedaPayService {
    * Créer une transaction FedaPay
    */
   async createTransaction(dto: CreateFedaPayTransactionDto) {
+    if (!this.secretKey || this.secretKey.includes('changez_moi')) {
+      this.logger.error('FedaPay FEDAPAY_SECRET_KEY absente ou non configurée dans le fichier .env.');
+      return {
+        success: false,
+        message: 'Clé FedaPay non configurée sur le serveur. Veuillez renseigner FEDAPAY_SECRET_KEY dans le fichier .env.',
+      };
+    }
+
     const url = `${this.baseUrl}/transactions`;
 
     let phoneObj: any = undefined;
@@ -83,7 +91,11 @@ export class FedaPayService {
       const data = await res.json();
       if (!res.ok) {
         this.logger.error(`FedaPay error: ${JSON.stringify(data)}`);
-        throw new Error(data.message || 'Erreur lors de la création FedaPay');
+        const msg = data.message || 'Erreur FedaPay';
+        if (msg.toLowerCase().includes('auth') || res.status === 401) {
+          throw new Error('Erreur d\'authentification FedaPay. Vérifiez la clé FEDAPAY_SECRET_KEY et le mode (sandbox/live) dans .env.');
+        }
+        throw new Error(msg);
       }
 
       const transaction = data.v1?.transaction || data.transaction || data;
@@ -126,6 +138,10 @@ export class FedaPayService {
     });
 
     const data = await res.json();
+    if (!res.ok) {
+      this.logger.error(`FedaPay generateToken error: ${JSON.stringify(data)}`);
+      throw new Error(data.message || 'Erreur lors de la génération du token FedaPay');
+    }
     const result = data.v1 || data;
     return {
       token: result.token,
