@@ -40,8 +40,9 @@ export class SubscriptionsController {
         }));
       }
     } catch {
-      // Fallback
+      // Error fetching packages from DB
     }
+
     return [];
   }
 
@@ -65,75 +66,10 @@ export class SubscriptionsController {
         }));
       }
     } catch {
-      // Fallback
+      // Error fetching options from DB
     }
 
-    return [
-      {
-        id: 'opt-extra-shop',
-        code: 'EXTRA_SHOP',
-        name: 'Boutique supplémentaire',
-        description: 'Ajoute un emplacement ou point de vente supplémentaire à votre entreprise.',
-        price: 1500,
-        priceDisplay: '1 500 FCFA/mois',
-        billingType: 'MONTHLY',
-        unit: 'boutique',
-        isActive: true,
-      },
-      {
-        id: 'opt-user-pack-5',
-        code: 'USER_PACK_5',
-        name: 'Pack de 5 utilisateurs supplémentaires',
-        description: 'Étendez l\'accès de votre équipe avec 5 comptes d\'utilisateurs en plus.',
-        price: 1000,
-        priceDisplay: '1 000 FCFA/mois',
-        billingType: 'MONTHLY',
-        unit: 'pack_5_utilisateurs',
-        isActive: true,
-      },
-      {
-        id: 'opt-ai-assistant',
-        code: 'AI_ASSISTANT',
-        name: 'Assistant ARIKE intelligent',
-        description: 'Conseils IA de réassort, prévisions des ventes et alertes d\'optimisation de stock.',
-        price: 1500,
-        priceDisplay: '1 500 à 2 000 FCFA/mois',
-        billingType: 'MONTHLY',
-        unit: 'service',
-        isActive: true,
-      },
-      {
-        id: 'opt-fx-change',
-        code: 'FX_CHANGE',
-        name: 'Bureau de change',
-        description: 'Module de gestion des devises, taux de change en direct et comptabilité multi-devises.',
-        price: 2000,
-        priceDisplay: '2 000 FCFA/mois',
-        billingType: 'MONTHLY',
-        unit: 'service',
-        isActive: true,
-      },
-      {
-        id: 'opt-initial-training',
-        code: 'INITIAL_TRAINING',
-        name: 'Formation et accompagnement initial',
-        description: 'Prise en main guidée sur site ou à distance, paramétrage initial et formation de votre équipe.',
-        price: 25000,
-        priceDisplay: 'Paiement unique',
-        billingType: 'ONE_TIME',
-        unit: 'prestation',
-        isActive: true,
-      },
-      {
-        id: 'opt-premium-support',
-        code: 'PREMIUM_SUPPORT',
-        name: 'Support premium',
-        description: 'Assistance prioritaire 24/7 par téléphone et WhatsApp avec un gestionnaire de compte dédié.',
-        price: 0,
-        unit: 'sur_devis',
-        isActive: true,
-      },
-    ];
+    return [];
   }
 
   @Get('onboarding-policy')

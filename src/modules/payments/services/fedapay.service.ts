@@ -148,9 +148,28 @@ export class FedaPayService {
 
       const data = await res.json();
       const tx = data.v1?.transaction || data.transaction || data;
+      const status = tx.status;
+
+      if (status === 'approved' || status === 'transferred') {
+        let metadata = tx.custom_metadata || tx.metadata || {};
+        if (typeof metadata === 'string') {
+          try {
+            metadata = JSON.parse(metadata);
+          } catch (_) {}
+        }
+        const shopId = metadata.shop_id || metadata.shopId;
+        const planCode = metadata.plan_code || metadata.planCode;
+        const durationDays = parseInt(metadata.duration_days || metadata.durationDays || '30', 10);
+        const addonCode = metadata.addon_code || metadata.addonCode;
+
+        if (shopId) {
+          await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, tx);
+        }
+      }
+
       return {
         success: true,
-        status: tx.status, // 'approved', 'canceled', 'pending', 'declined'
+        status: status, // 'approved', 'canceled', 'pending', 'declined'
         amount: tx.amount,
         approvedAt: tx.approved_at,
         metadata: tx.custom_metadata,
@@ -168,20 +187,31 @@ export class FedaPayService {
    * Traitement automatique du Webhook FedaPay
    */
   async handleWebhook(body: any) {
-    const event = body.event || body.type;
-    const entity = body.entity || body.data?.object || body.transaction;
+    this.logger.log(`FedaPay Webhook payload reçu: ${JSON.stringify(body)}`);
 
-    this.logger.log(`FedaPay Webhook reçu: event=${event}, status=${entity?.status}`);
+    const event = body.name || body.event || body.type || '';
+    const entity = body.entity || body.data?.object || body.transaction || body;
+    const status = entity?.status || body.status || '';
 
-    if (entity && (entity.status === 'approved' || event === 'transaction.approved')) {
-      const metadata = entity.custom_metadata || {};
-      const shopId = metadata.shop_id;
-      const planCode = metadata.plan_code;
-      const durationDays = parseInt(metadata.duration_days || '30', 10);
-      const addonCode = metadata.addon_code;
+    this.logger.log(`FedaPay Webhook analysé: event=${event}, status=${status}`);
+
+    if (status === 'approved' || status === 'transferred' || event === 'transaction.approved' || event === 'approved') {
+      let metadata = entity.custom_metadata || entity.metadata || body.custom_metadata || {};
+      if (typeof metadata === 'string') {
+        try {
+          metadata = JSON.parse(metadata);
+        } catch (_) {}
+      }
+
+      const shopId = metadata.shop_id || metadata.shopId;
+      const planCode = metadata.plan_code || metadata.planCode;
+      const durationDays = parseInt(metadata.duration_days || metadata.durationDays || '30', 10);
+      const addonCode = metadata.addon_code || metadata.addonCode;
 
       if (shopId) {
-        await this.applySubscriptionUpgrade(shopId, planCode, durationDays, addonCode);
+        await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, entity);
+      } else {
+        this.logger.warn(`Webhook FedaPay approuvé mais shop_id manquant dans metadata: ${JSON.stringify(metadata)}`);
       }
     }
 
@@ -191,49 +221,99 @@ export class FedaPayService {
   /**
    * Activation automatique du forfait en base de données après paiement
    */
-  private async applySubscriptionUpgrade(
+  public async applySubscriptionUpgrade(
     shopId: number,
     planCode?: string,
     durationDays = 30,
     addonCode?: string,
+    entity?: any,
   ) {
     const db = this.supabase.db;
     const now = new Date();
 
-    const { data: shop } = await db
-      .from('shops')
-      .select('subscription_plan, subscription_expires_at, granted_modules')
-      .eq('id', shopId)
-      .single();
+    try {
+      const { data: shop } = await db
+        .from('shops')
+        .select('id, plan, subscription_expires_at, granted_modules, organization_id')
+        .eq('id', shopId)
+        .maybeSingle();
 
-    if (!shop) return;
-
-    let expiresAt = shop.subscription_expires_at
-      ? new Date(shop.subscription_expires_at)
-      : now;
-    if (expiresAt < now) expiresAt = now;
-
-    expiresAt.setDate(expiresAt.getDate() + durationDays);
-
-    const updatePayload: any = {
-      subscription_expires_at: expiresAt.toISOString(),
-      updated_at: now.toISOString(),
-    };
-
-    if (planCode) {
-      updatePayload.subscription_plan = planCode;
-    }
-
-    if (addonCode) {
-      const existingModules = Array.isArray(shop.granted_modules)
-        ? shop.granted_modules
-        : [];
-      if (!existingModules.includes(addonCode)) {
-        updatePayload.granted_modules = [...existingModules, addonCode];
+      if (!shop) {
+        this.logger.error(`Shop ${shopId} non trouvé pour mise à jour FedaPay`);
+        return;
       }
-    }
 
-    await db.from('shops').update(updatePayload).eq('id', shopId);
-    this.logger.log(`Shop ${shopId} mis à jour via FedaPay: plan=${planCode}, expire=${expiresAt.toISOString()}`);
+      const currentExpires = shop.subscription_expires_at
+        ? new Date(shop.subscription_expires_at).getTime()
+        : now.getTime();
+      const baseTime = currentExpires > now.getTime() ? currentExpires : now.getTime();
+      const expiresAt = new Date(baseTime + durationDays * 86400000);
+      const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
+
+      const targetPlan = planCode || shop.plan || 'ESSENTIEL';
+
+      const updatePayload: any = {
+        plan: targetPlan,
+        subscription_expires_at: expiresAt.toISOString(),
+        updated_at: now.toISOString(),
+      };
+
+      if (addonCode) {
+        const existingModules = Array.isArray(shop.granted_modules)
+          ? shop.granted_modules
+          : [];
+        if (!existingModules.includes(addonCode)) {
+          updatePayload.granted_modules = [...existingModules, addonCode];
+        }
+      }
+
+      // Update shop
+      await db.from('shops').update(updatePayload).eq('id', shopId);
+
+      // Update organization if exists
+      if (shop.organization_id) {
+        await db.from('organizations').update({
+          plan: targetPlan,
+          subscription_expires_at: expiresAt.toISOString(),
+        }).eq('id', shop.organization_id);
+      }
+
+      // Record active subscription
+      try {
+        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', targetPlan).maybeSingle();
+        await db.from('subscriptions').insert({
+          tenant_id: String(shopId),
+          plan_id: planData?.id,
+          plan_code: targetPlan,
+          status: 'ACTIVE',
+          started_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          grace_until: graceUntil.toISOString(),
+          auto_renew: false,
+        });
+      } catch (subErr: any) {
+        this.logger.warn(`Insertion table subscriptions omise ou échouée: ${subErr.message}`);
+      }
+
+      // Record payment log
+      try {
+        const amount = entity?.amount ? Number(entity.amount) : 0;
+        const txId = entity?.id ? String(entity.id) : `FEDA-${Date.now()}`;
+        await db.from('payments').insert({
+          shop_id: shopId,
+          amount: amount,
+          method: 'FedaPay Mobile Money',
+          reference: txId,
+          status: 'confirmed',
+          created_at: now.toISOString(),
+        });
+      } catch (payErr: any) {
+        this.logger.warn(`Insertion table payments omise ou échouée: ${payErr.message}`);
+      }
+
+      this.logger.log(`Shop ${shopId} mis à jour avec succès via FedaPay: plan=${targetPlan}, expire=${expiresAt.toISOString()}`);
+    } catch (err: any) {
+      this.logger.error(`Échec applySubscriptionUpgrade FedaPay pour shop ${shopId}: ${err.message}`);
+    }
   }
 }
