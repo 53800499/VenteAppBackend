@@ -2,6 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -52,8 +55,12 @@ export class FedaPayController {
   }
 
   @Post('webhook')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook de notification automatique FedaPay' })
-  async webhook(@Body() body: any) {
-    return this.fedapayService.handleWebhook(body);
+  async webhook(
+    @Body() body: any,
+    @Headers() headers: Record<string, string>,
+  ) {
+    return this.fedapayService.handleWebhook(body, headers);
   }
 }

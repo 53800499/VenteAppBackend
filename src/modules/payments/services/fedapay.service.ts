@@ -27,10 +27,17 @@ export class FedaPayService {
   }
 
   private get environment(): string {
-    return this.configService.get<string>('FEDAPAY_ENVIRONMENT') || 'live';
+    const env = this.configService.get<string>('FEDAPAY_ENVIRONMENT');
+    if (env) return env.toLowerCase();
+    if (this.secretKey.startsWith('sk_sandbox_')) return 'sandbox';
+    if (this.secretKey.startsWith('sk_live_')) return 'live';
+    return 'live';
   }
 
   private get baseUrl(): string {
+    if (this.secretKey.startsWith('sk_live_')) return 'https://api.fedapay.com/v1';
+    if (this.secretKey.startsWith('sk_sandbox_')) return 'https://sandbox-api.fedapay.com/v1';
+
     return this.environment === 'live'
       ? 'https://api.fedapay.com/v1'
       : 'https://sandbox-api.fedapay.com/v1';
@@ -209,36 +216,51 @@ export class FedaPayService {
   /**
    * Traitement automatique du Webhook FedaPay
    */
-  async handleWebhook(body: any) {
-    this.logger.log(`FedaPay Webhook payload reçu: ${JSON.stringify(body)}`);
+  async handleWebhook(body: any, headers?: Record<string, string>) {
+    try {
+      this.logger.log(`FedaPay Webhook payload reçu: ${JSON.stringify(body)}`);
 
-    const event = body.name || body.event || body.type || '';
-    const entity = body.entity || body.data?.object || body.transaction || body;
-    const status = entity?.status || body.status || '';
-
-    this.logger.log(`FedaPay Webhook analysé: event=${event}, status=${status}`);
-
-    if (status === 'approved' || status === 'transferred' || event === 'transaction.approved' || event === 'approved') {
-      let metadata = entity.custom_metadata || entity.metadata || body.custom_metadata || {};
-      if (typeof metadata === 'string') {
-        try {
-          metadata = JSON.parse(metadata);
-        } catch (_) {}
+      if (!body || typeof body !== 'object') {
+        return { status: 'success', message: 'Payload vide ou invalide ignoré' };
       }
 
-      const shopId = metadata.shop_id || metadata.shopId;
-      const planCode = metadata.plan_code || metadata.planCode;
-      const durationDays = parseInt(metadata.duration_days || metadata.durationDays || '30', 10);
-      const addonCode = metadata.addon_code || metadata.addonCode;
+      const event = body.name || body.event || body.type || body.v1?.event || '';
+      const entity = body.entity || body.data?.object || body.transaction || body.v1?.transaction || body;
+      const status = entity?.status || body.status || '';
 
-      if (shopId) {
-        await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, entity);
-      } else {
-        this.logger.warn(`Webhook FedaPay approuvé mais shop_id manquant dans metadata: ${JSON.stringify(metadata)}`);
+      this.logger.log(`FedaPay Webhook analysé: event=${event}, status=${status}`);
+
+      if (
+        status === 'approved' ||
+        status === 'transferred' ||
+        event === 'transaction.approved' ||
+        event === 'approved'
+      ) {
+        let metadata = entity?.custom_metadata || entity?.metadata || body?.custom_metadata || {};
+        if (typeof metadata === 'string') {
+          try {
+            metadata = JSON.parse(metadata);
+          } catch (_) {}
+        }
+
+        const shopId = metadata?.shop_id || metadata?.shopId;
+        const planCode = metadata?.plan_code || metadata?.planCode;
+        const durationDays = parseInt(metadata?.duration_days || metadata?.durationDays || '30', 10);
+        const addonCode = metadata?.addon_code || metadata?.addonCode;
+
+        if (shopId) {
+          await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, entity);
+        } else {
+          this.logger.warn(`Webhook FedaPay approuvé mais shop_id manquant dans metadata: ${JSON.stringify(metadata)}`);
+        }
       }
+
+      return { status: 'success', message: 'Webhook FedaPay traité avec succès' };
+    } catch (err: any) {
+      this.logger.error(`Erreur lors du traitement du Webhook FedaPay: ${err.message}`, err.stack);
+      // Toujours renvoyer un statut 200 à FedaPay pour éviter la désactivation de l'endpoint
+      return { status: 'success', message: 'Erreur interne enregistrée', error: err.message };
     }
-
-    return { received: true };
   }
 
   /**
