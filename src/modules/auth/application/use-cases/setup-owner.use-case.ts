@@ -42,7 +42,7 @@ export class SetupOwnerUseCase {
       const timestamp = nowMs();
       const ownerPhone = normalizePhoneToWhatsApp(command.ownerPhone);
 
-      const planCode = command.planCode || 'ESSENTIEL';
+      const planCode = command.planCode || 'FREE';
       
       let trialEnabled = true;
       let trialDurationDays = 14;
@@ -59,13 +59,18 @@ export class SetupOwnerUseCase {
         }
       } catch {}
 
-      const subStatus = trialEnabled ? 'TRIAL' : 'PENDING_ACTIVATION';
-      const trialExpiresAt = trialEnabled
-        ? new Date(Date.now() + trialDurationDays * 86400000).toISOString()
-        : new Date().toISOString();
-      const trialGraceUntil = trialEnabled
-        ? new Date(Date.now() + (trialDurationDays + gracePeriodDays) * 86400000).toISOString()
-        : new Date().toISOString();
+      const isFree = planCode === 'FREE';
+      const subStatus = isFree ? 'ACTIVE' : (trialEnabled ? 'TRIAL' : 'PENDING_ACTIVATION');
+      const trialExpiresAt = isFree
+        ? new Date(Date.now() + 3650 * 86400000).toISOString() // 10 ans pour le forfait permanent gratuit
+        : (trialEnabled
+            ? new Date(Date.now() + trialDurationDays * 86400000).toISOString()
+            : new Date().toISOString());
+      const trialGraceUntil = isFree
+        ? new Date(Date.now() + 3660 * 86400000).toISOString()
+        : (trialEnabled
+            ? new Date(Date.now() + (trialDurationDays + gracePeriodDays) * 86400000).toISOString()
+            : new Date().toISOString());
 
       const shop = await this.shops.create({
         name: command.shopName,
@@ -111,23 +116,13 @@ export class SetupOwnerUseCase {
       // Initialize Subscription & Plan (TRIAL or PENDING_ACTIVATION based on policy)
       try {
         const db = this.tenantDb.getAdminClient();
-        const { data: updatedShop } = await db.from('shops').update({
-          plan: planCode,
-          subscription_expires_at: trialExpiresAt,
-        }).eq('id', shop.id).select('organization_id').maybeSingle();
-
-        const orgId = updatedShop?.organization_id;
-        if (orgId) {
-          await db.from('organizations').update({
-            plan: planCode,
-            subscription_expires_at: trialExpiresAt,
-          }).eq('id', orgId);
-        }
+        const { data: shopRecord } = await db.from('shops').select('server_id').eq('id', shop.id).maybeSingle();
+        const tenantUuid = shopRecord?.server_id;
 
         const { data: planData } = await db.from('subscription_plans').select('id').eq('code', planCode).maybeSingle();
-        if (planData?.id) {
+        if (planData?.id && tenantUuid) {
           await db.from('subscriptions').insert({
-            tenant_id: String(shop.id),
+            tenant_id: tenantUuid,
             plan_id: planData.id,
             plan_code: planCode,
             status: subStatus,

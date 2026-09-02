@@ -67,30 +67,34 @@ export class AdminSubscriptionsController {
     try {
       let { data: shops } = await db.from('shops').select('*');
       const { data: orgs } = await db.from('organizations').select('*');
+      const { data: allSubs } = await db.from('subscriptions').select('*, subscription_plans(*)').order('created_at', { ascending: false });
+
       const orgMap = new Map((orgs || []).map((o: any) => [o.id, o]));
+      const subMap = new Map();
+      (allSubs || []).forEach((s: any) => {
+        if (!subMap.has(s.tenant_id)) subMap.set(s.tenant_id, s);
+      });
 
       if (!shops || shops.length === 0) {
-        // Fallback demo shop if DB has no shop rows
         shops = [{
           id: 1,
           name: 'Boulangerie Sikirou SARL',
           phone: '+229 97 00 00 00',
-          plan: 'PRO',
-          subscription_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
-          last_extended_by: 'Admin System',
-          last_extension_reason: 'Activation commerciale',
+          server_id: 'default-server-id',
+          created_at: Date.now(),
         }];
       }
 
       return (shops || []).map((shop: any) => {
         const org = (orgMap.get(shop.organization_id) || {}) as any;
-        const expiresAt = shop.subscription_expires_at || org.subscription_expires_at || new Date(Date.now() + 30 * 86400000).toISOString();
-        const plan = shop.plan || org.plan || 'PRO';
+        const sub = subMap.get(shop.server_id);
+        const expiresAt = sub?.expires_at || new Date(Date.now() + 30 * 86400000).toISOString();
+        const plan = sub?.plan_code || 'PRO';
         const now = Date.now();
         const expireTime = new Date(expiresAt).getTime();
         const daysLeft = Math.ceil((expireTime - now) / 86400000);
 
-        let status = 'ACTIVE';
+        let status = sub?.status || 'ACTIVE';
         if (daysLeft < 0) status = 'EXPIRED';
         else if (daysLeft <= 7) status = 'EXPIRING_SOON';
 
@@ -102,12 +106,12 @@ export class AdminSubscriptionsController {
           plan,
           status,
           daysLeft: daysLeft > 0 ? daysLeft : 0,
-          startsAt: typeof shop.created_at === 'number' ? new Date(shop.created_at).toISOString() : String(shop.created_at || new Date().toISOString()),
+          startsAt: sub?.started_at || (typeof shop.created_at === 'number' ? new Date(shop.created_at).toISOString() : String(shop.created_at || new Date().toISOString())),
           expiresAt,
           gracePeriodDays: 7,
           autoRenew: false,
-          lastExtendedBy: shop.last_extended_by || 'Admin System',
-          lastExtensionReason: shop.last_extension_reason || 'Souscription initiale',
+          lastExtendedBy: 'Admin System',
+          lastExtensionReason: 'Souscription active',
         };
       });
     } catch {
@@ -131,28 +135,36 @@ export class AdminSubscriptionsController {
 
     try {
       const { data: shop } = await db.from('shops').select('*').eq('id', numericId).maybeSingle();
-      const currentExpires = shop?.subscription_expires_at ? new Date(shop.subscription_expires_at).getTime() : Date.now();
-      const baseTime = currentExpires > Date.now() ? currentExpires : Date.now();
-      const newExpiresAt = new Date(baseTime + days * 86400000).toISOString();
+      const tenantUuid = shop?.server_id;
 
-      await db.from('shops').update({
-        plan,
-        subscription_expires_at: newExpiresAt,
-        last_extended_by: adminEmail,
-        last_extension_reason: dto.reason || `Prolongation de ${days} jours (Forfait ${plan})`,
-        updated_at: new Date().toISOString(),
-      }).eq('id', numericId);
+      let newExpiresAt = new Date(Date.now() + days * 86400000).toISOString();
 
-      if (shop?.organization_id) {
-        await db.from('organizations').update({
-          plan,
-          subscription_expires_at: newExpiresAt,
-        }).eq('id', shop.organization_id);
-      } else {
-        await db.from('organizations').update({
-          plan,
-          subscription_expires_at: newExpiresAt,
-        }).eq('root_shop_id', numericId);
+      if (tenantUuid) {
+        const { data: existingSub } = await db
+          .from('subscriptions')
+          .select('*')
+          .eq('tenant_id', tenantUuid)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const currentExpires = existingSub?.expires_at ? new Date(existingSub.expires_at).getTime() : Date.now();
+        const baseTime = currentExpires > Date.now() ? currentExpires : Date.now();
+        newExpiresAt = new Date(baseTime + days * 86400000).toISOString();
+        const graceUntil = new Date(new Date(newExpiresAt).getTime() + 7 * 86400000).toISOString();
+
+        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', plan).maybeSingle();
+
+        await db.from('subscriptions').insert({
+          tenant_id: tenantUuid,
+          plan_id: planData?.id,
+          plan_code: plan,
+          status: 'ACTIVE',
+          started_at: new Date().toISOString(),
+          expires_at: newExpiresAt,
+          grace_until: graceUntil,
+          auto_renew: false,
+        });
       }
 
       try {

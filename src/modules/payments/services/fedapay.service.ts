@@ -105,17 +105,26 @@ export class FedaPayService {
         throw new Error(msg);
       }
 
-      const transaction = data.v1?.transaction || data.transaction || data;
+      const transaction = data['v1/transaction'] || data.v1?.transaction || data.transaction || data;
       const transactionId = transaction.id;
 
-      // Générer le token / URL de paiement
-      const tokenResult = await this.generateToken(transactionId, dto.mode);
+      let token = transaction.payment_token;
+      let checkoutUrl = transaction.payment_url;
+
+      // Si le token n'est pas fourni directement dans la transaction, le générer
+      if (!token || !checkoutUrl) {
+        try {
+          const tokenResult = await this.generateToken(transactionId, dto.mode);
+          token = token || tokenResult.token;
+          checkoutUrl = checkoutUrl || tokenResult.url;
+        } catch (_) {}
+      }
 
       return {
         success: true,
         transactionId: transactionId,
-        token: tokenResult.token,
-        checkoutUrl: tokenResult.url,
+        token: token,
+        checkoutUrl: checkoutUrl,
         message: 'Transaction FedaPay créée avec succès',
       };
     } catch (err: any) {
@@ -149,10 +158,10 @@ export class FedaPayService {
       this.logger.error(`FedaPay generateToken error: ${JSON.stringify(data)}`);
       throw new Error(data.message || 'Erreur lors de la génération du token FedaPay');
     }
-    const result = data.v1 || data;
+    const result = data['v1/token'] || data.v1 || data;
     return {
-      token: result.token,
-      url: result.url,
+      token: result.token || data.token,
+      url: result.url || data.url,
     };
   }
 
@@ -170,7 +179,7 @@ export class FedaPayService {
       });
 
       const data = await res.json();
-      const tx = data.v1?.transaction || data.transaction || data;
+      const tx = data['v1/transaction'] || data.v1?.transaction || data.transaction || data;
       let status = tx.status;
 
       // En mode Sandbox (environnement sandbox ou clé de test), auto-approuver
@@ -225,7 +234,7 @@ export class FedaPayService {
       }
 
       const event = body.name || body.event || body.type || body.v1?.event || '';
-      const entity = body.entity || body.data?.object || body.transaction || body.v1?.transaction || body;
+      const entity = body['v1/transaction'] || body.entity || body.data?.object || body.transaction || body.v1?.transaction || body;
       const status = entity?.status || body.status || '';
 
       this.logger.log(`FedaPay Webhook analysé: event=${event}, status=${status}`);
@@ -279,7 +288,7 @@ export class FedaPayService {
     try {
       const { data: shop } = await db
         .from('shops')
-        .select('id, plan, subscription_expires_at, granted_modules, organization_id')
+        .select('*')
         .eq('id', shopId)
         .maybeSingle();
 
@@ -288,46 +297,40 @@ export class FedaPayService {
         return;
       }
 
-      const currentExpires = shop.subscription_expires_at
-        ? new Date(shop.subscription_expires_at).getTime()
+      const tenantUuid = shop.server_id;
+      if (!tenantUuid) {
+        this.logger.error(`Shop ${shopId} n'a pas de server_id valide pour subscriptions`);
+        return;
+      }
+
+      // Vérifier la souscription existante
+      const { data: existingSub } = await db
+        .from('subscriptions')
+        .select('*')
+        .eq('tenant_id', tenantUuid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const currentExpires = existingSub?.expires_at
+        ? new Date(existingSub.expires_at).getTime()
         : now.getTime();
       const baseTime = currentExpires > now.getTime() ? currentExpires : now.getTime();
       const expiresAt = new Date(baseTime + durationDays * 86400000);
       const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
 
-      const targetPlan = planCode || shop.plan || 'ESSENTIEL';
+      const targetPlan = planCode || existingSub?.plan_code || 'ESSENTIEL';
 
-      const updatePayload: any = {
-        plan: targetPlan,
-        subscription_expires_at: expiresAt.toISOString(),
-        updated_at: now.toISOString(),
-      };
-
-      if (addonCode) {
-        const existingModules = Array.isArray(shop.granted_modules)
-          ? shop.granted_modules
-          : [];
-        if (!existingModules.includes(addonCode)) {
-          updatePayload.granted_modules = [...existingModules, addonCode];
-        }
-      }
-
-      // Update shop
-      await db.from('shops').update(updatePayload).eq('id', shopId);
-
-      // Update organization if exists
-      if (shop.organization_id) {
-        await db.from('organizations').update({
-          plan: targetPlan,
-          subscription_expires_at: expiresAt.toISOString(),
-        }).eq('id', shop.organization_id);
-      }
-
-      // Record active subscription
+      // Enregistrer l'abonnement actif dans la table `subscriptions`
       try {
-        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', targetPlan).maybeSingle();
+        const { data: planData } = await db
+          .from('subscription_plans')
+          .select('id')
+          .eq('code', targetPlan)
+          .maybeSingle();
+
         await db.from('subscriptions').insert({
-          tenant_id: String(shopId),
+          tenant_id: tenantUuid,
           plan_id: planData?.id,
           plan_code: targetPlan,
           status: 'ACTIVE',
@@ -337,26 +340,10 @@ export class FedaPayService {
           auto_renew: false,
         });
       } catch (subErr: any) {
-        this.logger.warn(`Insertion table subscriptions omise ou échouée: ${subErr.message}`);
+        this.logger.warn(`Insertion table subscriptions échouée: ${subErr.message}`);
       }
 
-      // Record payment log
-      try {
-        const amount = entity?.amount ? Number(entity.amount) : 0;
-        const txId = entity?.id ? String(entity.id) : `FEDA-${Date.now()}`;
-        await db.from('payments').insert({
-          shop_id: shopId,
-          amount: amount,
-          method: 'FedaPay Mobile Money',
-          reference: txId,
-          status: 'confirmed',
-          created_at: now.toISOString(),
-        });
-      } catch (payErr: any) {
-        this.logger.warn(`Insertion table payments omise ou échouée: ${payErr.message}`);
-      }
-
-      this.logger.log(`Shop ${shopId} mis à jour avec succès via FedaPay: plan=${targetPlan}, expire=${expiresAt.toISOString()}`);
+      this.logger.log(`Shop ${shopId} (tenant: ${tenantUuid}) abonnement activé avec succès via FedaPay: plan=${targetPlan}, expire=${expiresAt.toISOString()}`);
     } catch (err: any) {
       this.logger.error(`Échec applySubscriptionUpgrade FedaPay pour shop ${shopId}: ${err.message}`);
     }

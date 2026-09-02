@@ -23,6 +23,9 @@ import { RequirePermissions } from '../../../../shared/decorators/permissions.de
 import { Permission } from '../../../../shared/enums/permission.enum';
 import { PermissionsGuard } from '../../../../shared/guards/permissions.guard';
 import { SessionGuard } from '../../../../shared/guards/session.guard';
+import { PlanModulesGuard } from '../../../../shared/guards/plan-modules.guard';
+import { RequireModule } from '../../../../shared/decorators/require-module.decorator';
+import { ArikeModule } from '../../../../shared/enums/module.enum';
 import type { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
 import { TenantGuard } from '../../../tenants/tenant.guard';
@@ -63,7 +66,8 @@ import {
 @ApiTags('Bureau de change')
 @Controller()
 @UseInterceptors(TransformResponseInterceptor)
-@UseGuards(SessionGuard, TenantGuard, PermissionsGuard)
+@UseGuards(SessionGuard, TenantGuard, PlanModulesGuard, PermissionsGuard)
+@RequireModule(ArikeModule.FX_EXCHANGE)
 @ApiSecurity('bearer')
 export class FxExchangeController {
   constructor(

@@ -82,7 +82,8 @@ export class AdminSettingsController {
           maxStores: plan.max_shops,
           maxUsers: plan.max_users,
           includedModules: plan.granted_modules || [],
-          trialDays: 14,
+          capabilities: plan.capabilities || (plan.code === 'FREE' ? [] : ['CLOUD_SYNC']),
+          trialDays: plan.code === 'FREE' ? 0 : 14,
           status: plan.is_active !== false ? 'ACTIVE' : 'INACTIVE',
           description: plan.description || '',
         }));
@@ -105,6 +106,7 @@ export class AdminSettingsController {
         price_monthly: payload.monthlyPrice,
         price_yearly: payload.annualPrice,
         granted_modules: payload.includedModules || [],
+        capabilities: payload.capabilities || (payload.code === 'FREE' ? [] : ['CLOUD_SYNC']),
         max_users: payload.maxUsers,
         max_shops: payload.maxStores,
         is_active: payload.status !== 'INACTIVE',
