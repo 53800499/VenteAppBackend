@@ -31,7 +31,7 @@ export class AdminSubscriptionsController {
   constructor(
     private readonly tenantDb: TenantDatabaseService,
     private readonly licenseSigner: LicenseSignerService,
-  ) {}
+  ) { }
 
   @Get('packages')
   @ApiOperation({ summary: 'Obtenir les forfaits SaaS disponibles' })
@@ -55,7 +55,7 @@ export class AdminSubscriptionsController {
           description: plan.description || '',
         }));
       }
-    } catch {}
+    } catch { }
     return [];
   }
 
@@ -79,7 +79,7 @@ export class AdminSubscriptionsController {
         shops = [{
           id: 1,
           name: 'Boulangerie Sikirou SARL',
-          phone: '+229 97 00 00 00',
+          phone: '+229 53 80 04 99',
           server_id: 'default-server-id',
           created_at: Date.now(),
         }];
@@ -178,7 +178,7 @@ export class AdminSubscriptionsController {
           reason: dto.reason || `Prolongation de ${days} jours (Forfait ${plan})`,
           result: 'SUCCESS',
         });
-      } catch {}
+      } catch { }
 
       return {
         success: true,
@@ -280,7 +280,7 @@ export class AdminSubscriptionsController {
         reason: `Régénération de licence Ed25519 (${plan})`,
         result: 'SUCCESS',
       });
-    } catch {}
+    } catch { }
 
     return {
       success: true,
@@ -330,7 +330,7 @@ export class AdminSubscriptionsController {
           reason: dto.reason || `Changement de forfait vers ${dto.plan}`,
           result: 'SUCCESS',
         });
-      } catch {}
+      } catch { }
 
       return {
         success: true,
@@ -395,7 +395,7 @@ export class AdminSubscriptionsController {
           reason: dto.reason || `Période de grâce de ${days} jours accordée`,
           result: 'SUCCESS',
         });
-      } catch {}
+      } catch { }
 
       return {
         success: true,

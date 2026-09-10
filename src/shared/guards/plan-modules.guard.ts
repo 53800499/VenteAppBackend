@@ -140,8 +140,8 @@ export class PlanModulesGuard implements CanActivate {
       const { data: planData } = await db.from('subscription_plans').select('*').eq('code', planCode).maybeSingle();
 
       const defaultModules: Record<string, string[]> = {
-        FREE: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
-        ESSENTIEL: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC'],
+        FREE: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
+        ESSENTIEL: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
         PRO: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG'],
         BUSINESS: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG', 'STOCK_TRANSFERS', 'FX_EXCHANGE', 'MULTI_SHOP'],
         ENTERPRISE: ['ALL_MODULES'],
@@ -155,7 +155,11 @@ export class PlanModulesGuard implements CanActivate {
         ENTERPRISE: ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT', 'CUSTOM_INTEGRATIONS', 'DEDICATED_SUPPORT'],
       };
 
-      const grantedModules = planData?.granted_modules || defaultModules[planCode] || defaultModules.FREE;
+      let grantedModules: string[] = planData?.granted_modules || defaultModules[planCode] || defaultModules.FREE;
+      // S'assurer que le module essentiel PROCUREMENT (Approvisionnements) est accessible à tous les commerces
+      if (!grantedModules.includes('PROCUREMENT') && !grantedModules.includes('ALL_MODULES')) {
+        grantedModules = [...grantedModules, 'PROCUREMENT'];
+      }
       const capabilities = planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE;
 
       const result = {
@@ -173,7 +177,7 @@ export class PlanModulesGuard implements CanActivate {
       const fallback = {
         planCode: 'FREE',
         status: 'OFFLINE_FALLBACK',
-        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
+        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
         capabilities: [],
         cachedUntil: now + 10000,
       };

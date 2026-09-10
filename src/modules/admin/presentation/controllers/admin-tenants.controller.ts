@@ -28,7 +28,7 @@ export class UpdateTenantStatusDto {
 @ApiBearerAuth()
 @UseInterceptors(TransformResponseInterceptor)
 export class AdminTenantsController {
-  constructor(private readonly tenantDb: TenantDatabaseService) {}
+  constructor(private readonly tenantDb: TenantDatabaseService) { }
 
   @Get()
   @ApiOperation({ summary: 'Lister les entreprises / tenants de la plateforme' })
@@ -195,7 +195,7 @@ export class AdminTenantsController {
           id: `tenant-${numericShopId}`,
           numericShopId,
           name: shop?.name || 'Boutique Principale',
-          phone: users?.[0]?.phone || '+229 97 00 00 00',
+          phone: users?.[0]?.phone || '+229 53 80 04 99',
           country: 'Bénin',
           plan: 'STANDARD',
           status: 'ACTIVE',
@@ -230,7 +230,7 @@ export class AdminTenantsController {
           id: `tenant-${numericShopId}`,
           numericShopId,
           name: 'Boutique Démo ARIKE',
-          phone: '+229 97 00 00 00',
+          phone: '+229 53 80 04 99',
           country: 'Bénin',
           plan: 'STANDARD',
           status: 'ACTIVE',

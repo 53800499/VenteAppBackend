@@ -20,7 +20,7 @@ import { TenantDatabaseService } from '../../../tenants/tenant-database.service'
 @ApiBearerAuth()
 @UseInterceptors(TransformResponseInterceptor)
 export class AdminSettingsController {
-  constructor(private readonly tenantDb: TenantDatabaseService) {}
+  constructor(private readonly tenantDb: TenantDatabaseService) { }
 
   // 1. General Settings
   @Get('settings/general')
@@ -38,7 +38,7 @@ export class AdminSettingsController {
     return {
       platformName: "ARIKE ERP Multi-Boutiques",
       supportEmail: "support@arike.app",
-      supportPhone: "+229 97 00 00 00",
+      supportPhone: "+229 53 80 04 99",
       defaultLanguage: "fr",
       defaultCurrency: "FCFA",
       allowNewRegistrations: true,
@@ -565,7 +565,7 @@ export class AdminSettingsController {
       if (bkp?.created_at) {
         lastBackup = bkp.created_at.slice(0, 16).replace('T', ' ');
       }
-    } catch {}
+    } catch { }
 
     return {
       nestjsApi: "OPERATIONAL",
