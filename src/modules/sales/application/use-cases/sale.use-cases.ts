@@ -137,7 +137,15 @@ export class CreateStandardSaleUseCase {
     }
 
     const timestamp = nowMs();
-    const receiptNumber = await this.receipts.generate(auth.shopId, timestamp);
+    let receiptNumber = input.receiptNumber?.trim();
+    if (receiptNumber) {
+      const existing = await this.sales.findByShopAndReceiptNumber(auth.shopId, receiptNumber);
+      if (existing) {
+        return toSaleResponse(existing);
+      }
+    } else {
+      receiptNumber = await this.receipts.generate(auth.shopId, timestamp);
+    }
 
     const fifoSnapshots: {
       productId: number;
@@ -298,7 +306,15 @@ export class CreateQuickSaleUseCase {
     const payment = toPaymentDraft(input.payment);
     const totals = this.validation.computeQuickTotals(input.totalAmount, payment);
     const timestamp = nowMs();
-    const receiptNumber = await this.receipts.generate(auth.shopId, timestamp);
+    let receiptNumber = input.receiptNumber?.trim();
+    if (receiptNumber) {
+      const existing = await this.sales.findByShopAndReceiptNumber(auth.shopId, receiptNumber);
+      if (existing) {
+        return toSaleResponse(existing);
+      }
+    } else {
+      receiptNumber = await this.receipts.generate(auth.shopId, timestamp);
+    }
 
     const sale = await this.sales.createWithItems(
       {

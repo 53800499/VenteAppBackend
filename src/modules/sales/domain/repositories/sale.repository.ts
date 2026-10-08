@@ -42,6 +42,7 @@ export interface SaleListFilters {
 
 export abstract class SaleRepository {
   abstract findByIdAndShop(id: number, shopId: number): Promise<Sale | null>;
+  abstract findByShopAndReceiptNumber(shopId: number, receiptNumber: string): Promise<Sale | null>;
   abstract listByShop(shopId: number, filters?: SaleListFilters): Promise<Sale[]>;
   abstract countByShopOnDay(shopId: number, dayStartMs: number, dayEndMs: number): Promise<number>;
   abstract createWithItems(sale: CreateSaleData, items: SaleLineInput[]): Promise<Sale>;

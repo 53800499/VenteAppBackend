@@ -91,6 +91,11 @@ export class CreateStandardSaleDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ example: 'REC-20261008-A7B2-0001', description: 'Référence générée par le terminal client (offline-first)' })
+  @IsOptional()
+  @IsString()
+  receiptNumber?: string;
 }
 
 export class CreateQuickSaleDto {
@@ -108,6 +113,11 @@ export class CreateQuickSaleDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @ApiPropertyOptional({ example: 'REC-20261008-A7B2-0001', description: 'Référence générée par le terminal client (offline-first)' })
+  @IsOptional()
+  @IsString()
+  receiptNumber?: string;
 }
 
 export class CancelSaleDto {

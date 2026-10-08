@@ -30,6 +30,20 @@ export class SupabaseSaleRepository extends SaleRepository {
     return SaleMapper.toDomain(data as SaleRow, items);
   }
 
+  async findByShopAndReceiptNumber(shopId: number, receiptNumber: string): Promise<Sale | null> {
+    const { data, error } = await this.supabase.db
+      .from('sales')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('receipt_number', receiptNumber)
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+    if (!data) return null;
+
+    const items = await this.fetchItems(data.id, shopId);
+    return SaleMapper.toDomain(data as SaleRow, items);
+  }
+
   async listByShop(shopId: number, filters?: SaleListFilters): Promise<Sale[]> {
     let query = this.supabase.db.from('sales').select('*').eq('shop_id', shopId);
 
