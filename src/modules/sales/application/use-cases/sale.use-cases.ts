@@ -96,6 +96,7 @@ export class CreateStandardSaleUseCase {
       customerId?: number;
       payment: PaymentInput;
       note?: string;
+      receiptNumber?: string;
     },
   ) {
     await this.assertOpenCashSession(auth.shopId);
@@ -294,7 +295,7 @@ export class CreateQuickSaleUseCase {
 
   async execute(
     auth: AuthContext,
-    input: { totalAmount: number; payment: PaymentInput; note?: string },
+    input: { totalAmount: number; payment: PaymentInput; note?: string; receiptNumber?: string },
   ) {
     const open = await this.cashSessions.findOpenByShop(auth.shopId);
     if (!open) {
