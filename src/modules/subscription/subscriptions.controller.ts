@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Headers, Post, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TransformResponseInterceptor } from '../../shared/interceptors/transform-response.interceptor';
 import { TenantDatabaseService } from '../tenants/tenant-database.service';
 import { PlanModulesGuard } from '../../shared/guards/plan-modules.guard';
+import { CheckoutSessionService, PLAN_PRICES_SERVER } from './checkout-session.service';
+import { FedaPayService } from '../payments/services/fedapay.service';
 
 export class MerchantSubscribeDto {
   planCode!: 'FREE' | 'ESSENTIEL' | 'PRO' | 'BUSINESS' | 'ENTERPRISE';
@@ -12,11 +14,29 @@ export class MerchantSubscribeDto {
   amount?: number;
 }
 
+export class PortalCreateSessionDto {
+  planCode!: 'ESSENTIEL' | 'PRO' | 'BUSINESS';
+  durationDays?: number;
+  customerName!: string;
+  customerPhone!: string;
+  customerEmail?: string;
+  // tenantId NEVER accepted from client — always resolved from JWT
+}
+
+export class CreatePortalSessionDto {
+  tenantId!: string;
+  shopId!: number;
+}
+
 @ApiTags('Subscriptions - Merchant App')
 @Controller('subscriptions')
 @UseInterceptors(TransformResponseInterceptor)
 export class SubscriptionsController {
-  constructor(private readonly tenantDb: TenantDatabaseService) {}
+  constructor(
+    private readonly tenantDb: TenantDatabaseService,
+    private readonly checkoutSessionService: CheckoutSessionService,
+    private readonly fedaPayService: FedaPayService,
+  ) {}
 
   @Get('packages')
   @ApiOperation({ summary: 'Obtenir les forfaits SaaS disponibles' })
@@ -288,7 +308,7 @@ export class SubscriptionsController {
     const targetPlan = dto.targetPlanCode || 'PRO';
     const durationDays = dto.durationDays || 30;
 
-    const { data: shop } = await db.from('shops').select('server_id, plan').eq('id', shopId).maybeSingle();
+    const { data: shop } = await db.from('shops').select('*').eq('id', shopId).maybeSingle();
     const tenantUuid = shop?.server_id;
 
     let existingSub: any = null;
@@ -430,5 +450,179 @@ export class SubscriptionsController {
     PlanModulesGuard.invalidateCache(shopId);
 
     return this.getMySubscription(String(shopId));
+  }
+
+  // ================================================================
+  // PORTAIL D'ABONNEMENT PUBLIC — Architecture v3
+  // ================================================================
+
+  /**
+   * [PUBLIC] Étape 1 : Créer une checkout session opaque (30 min)
+   * POST /api/subscriptions/portal/checkout-session
+   * Le prix est TOUJOURS calculé côté serveur — jamais depuis le client.
+   * Le client ne fournit que planCode + durationDays + infos client.
+   */
+  @Post('portal/checkout-session')
+  @ApiOperation({ summary: '[PUBLIC] Créer une checkout session de paiement (prix serveur)' })
+  async createCheckoutSession(@Body() dto: PortalCreateSessionDto) {
+    const durationDays = dto.durationDays || 30;
+    const planCode = dto.planCode;
+
+    return this.checkoutSessionService.createCheckoutSession({
+      planCode,
+      durationDays,
+      customerName: dto.customerName,
+      customerPhone: dto.customerPhone,
+      customerEmail: dto.customerEmail,
+      // tenantId intentionally omitted — client cannot self-assign
+    });
+  }
+
+  /**
+   * [PUBLIC] Récupérer les infos d'une checkout session (plan, montant, client)
+   * GET /api/subscriptions/portal/checkout-session/:id
+   */
+  @Get('portal/checkout-session/:id')
+  @ApiOperation({ summary: '[PUBLIC] Obtenir les infos d\'une checkout session' })
+  async getCheckoutSession(@Param('id') sessionId: string) {
+    const session = await this.checkoutSessionService.getCheckoutSession(sessionId);
+    if (!session) {
+      return { error: 'Session introuvable ou expirée', expired: true };
+    }
+    // Ne retourner que les informations nécessaires à l'affichage
+    return {
+      planCode: session.plan_code,
+      planName: PLAN_PRICES_SERVER[session.plan_code as keyof typeof PLAN_PRICES_SERVER]?.name || session.plan_code,
+      amount: session.amount,
+      currency: session.currency,
+      durationDays: session.duration_days,
+      customerName: session.customer_name,
+      status: session.status,
+      expiresAt: session.expires_at,
+    };
+  }
+
+  /**
+   * [PUBLIC] Étape 2 : Initier le paiement FedaPay pour une session
+   * POST /api/subscriptions/portal/checkout-session/:id/payment
+   * Le montant est RECALCULÉ côté serveur à partir du plan en session.
+   * Le client ne transmet JAMAIS le montant.
+   */
+  @Post('portal/checkout-session/:id/payment')
+  @ApiOperation({ summary: '[PUBLIC] Initier le paiement FedaPay pour une checkout session' })
+  async initiateSessionPayment(
+    @Param('id') sessionId: string,
+    @Headers('origin') origin?: string,
+  ) {
+    const session = await this.checkoutSessionService.getCheckoutSession(sessionId);
+
+    if (!session) {
+      return { success: false, error: 'Session introuvable ou expirée' };
+    }
+    if (session.status !== 'PENDING') {
+      return { success: false, error: `Session déjà traitée (statut : ${session.status})` };
+    }
+
+    // Prix recalculé côté serveur
+    const planCode = session.plan_code as 'ESSENTIEL' | 'PRO' | 'BUSINESS';
+    const planInfo = PLAN_PRICES_SERVER[planCode];
+    const serverAmount = session.duration_days >= 360 ? planInfo.annual : planInfo.monthly;
+    const baseUrl = origin || 'https://app.arike.com';
+
+    // Tenter FedaPay
+    const fedaRes = await this.fedaPayService.createTransaction({
+      amount: serverAmount,
+      description: `ARIKE ${planInfo.name} — ${session.duration_days >= 360 ? 'Annuel' : 'Mensuel'}`,
+      phoneNumber: session.customer_phone,
+      shopId: 0, // portail public — pas de shop_id encore
+      planCode,
+      durationDays: session.duration_days,
+    });
+
+    if (fedaRes.success && fedaRes.checkoutUrl) {
+      return {
+        success: true,
+        paymentUrl: fedaRes.checkoutUrl,
+        transactionId: fedaRes.transactionId,
+        redirectUrl: `${baseUrl}/subscription/success`,
+        cancelUrl: `${baseUrl}/subscription/cancel`,
+      };
+    }
+
+    // FedaPay non configuré — fallback WhatsApp
+    const whatsappNumber = '229015380499';
+    const cycleLabel = session.duration_days >= 360 ? 'annuel' : 'mensuel';
+    const priceLabel = `${serverAmount.toLocaleString('fr-FR')} FCFA/${session.duration_days >= 360 ? 'an' : 'mois'}`;
+    const message = encodeURIComponent(
+      `Bonjour ARIKE ! 👋\n\nJe souhaite m'abonner au forfait *ARIKE ${planInfo.name}* (${priceLabel} — ${cycleLabel}).\n\n📛 Nom : ${session.customer_name}\n📱 Téléphone : ${session.customer_phone}${session.customer_email ? `\n📧 Email : ${session.customer_email}` : ''}\n\nMerci de procéder à l'activation. (Réf. session : ${sessionId})`
+    );
+
+    return {
+      success: true,
+      paymentUrl: null,
+      whatsappUrl: `https://wa.me/${whatsappNumber}?text=${message}`,
+      sessionId,
+    };
+  }
+
+  /**
+   * [PUBLIC] Webhook FedaPay — Source de vérité de l'activation d'abonnement
+   * POST /api/subscriptions/portal/webhook/fedapay
+   *
+   * Idempotence garantie via unique index sur fedapay_transaction_id.
+   * La vérification est faite par FedaPayService.checkStatus (appel API FedaPay)
+   * avant toute activation — jamais sur la seule parole du webhook.
+   */
+  @Post('portal/webhook/fedapay')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '[PUBLIC] Webhook FedaPay — activation sécurisée des abonnements portail' })
+  async portalFedaPayWebhook(
+    @Body() body: any,
+    @Headers() headers: Record<string, string>,
+  ) {
+    // Déléguer au FedaPayService existant qui gère déjà le webhook
+    return this.fedaPayService.handleWebhook(body, headers);
+  }
+
+  /**
+   * [PROTÉGÉ] Créer une portal session longue durée (24h) depuis l'app Flutter
+   * POST /api/subscriptions/portal/portal-session
+   * Nécessite que le tenant soit connu — fourni par le backend depuis le JWT, jamais par le client.
+   */
+  @Post('portal/portal-session')
+  @ApiOperation({ summary: '[AUTH] Créer une portal session pour /subscription/manage' })
+  async createPortalSession(
+    @Headers('x-shop-id') shopHeader: string,
+    @Headers('x-tenant-id') tenantHeader?: string,
+  ) {
+    const db = this.tenantDb.getAdminClient();
+    const shopId = parseInt(shopHeader || '1', 10) || 1;
+
+    // Résoudre le tenant depuis la base — jamais depuis le client
+    const { data: shop } = await db.from('shops').select('server_id').eq('id', shopId).maybeSingle();
+    const tenantId = shop?.server_id;
+
+    if (!tenantId) {
+      return { error: 'Boutique ou tenant introuvable' };
+    }
+
+    return this.checkoutSessionService.createPortalSession({ tenantId, shopId });
+  }
+
+  /**
+   * [PUBLIC] Récupérer les données d'une portal session (statut abonnement, historique)
+   * GET /api/subscriptions/portal/portal-session/:id
+   */
+  @Get('portal/portal-session/:id')
+  @ApiOperation({ summary: '[PUBLIC] Obtenir les données d\'une portal session de gestion' })
+  async getPortalSession(@Param('id') sessionId: string) {
+    const session = await this.checkoutSessionService.getPortalSession(sessionId);
+
+    if (!session) {
+      return { error: 'Session introuvable ou expirée', expired: true };
+    }
+
+    // Récupérer le statut d'abonnement réel depuis le backend
+    return this.getMySubscription(String(session.shop_id));
   }
 }

@@ -28,6 +28,7 @@ import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.
 import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { SubscriptionsController } from './modules/subscription/subscriptions.controller';
+import { CheckoutSessionService } from './modules/subscription/checkout-session.service';
 
 @Module({
   imports: [
@@ -58,6 +59,6 @@ import { SubscriptionsController } from './modules/subscription/subscriptions.co
     FxExchangeModule,
   ],
   controllers: [AppController, SubscriptionsController],
-  providers: [AppService],
+  providers: [AppService, CheckoutSessionService],
 })
 export class AppModule {}

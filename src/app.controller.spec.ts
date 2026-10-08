@@ -18,5 +18,17 @@ describe('AppController', () => {
     it('should return "Hello World!"', () => {
       expect(appController.getHello()).toBe('Hello World!');
     });
+
+    it('should return health status', () => {
+      const res = appController.getHealth();
+      expect(res.status).toBe('ok');
+      expect(res.serverTime).toBeDefined();
+    });
+
+    it('should return sync health status', () => {
+      const res = appController.getSyncHealth();
+      expect(res.status).toBe('ok');
+      expect(res.syncReady).toBe(true);
+    });
   });
 });

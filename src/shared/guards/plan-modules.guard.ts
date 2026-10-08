@@ -106,7 +106,7 @@ export class PlanModulesGuard implements CanActivate {
     const db = this.tenantDb.getAdminClient();
 
     try {
-      const { data: shop } = await db.from('shops').select('server_id, plan').eq('id', shopId).maybeSingle();
+      const { data: shop } = await db.from('shops').select('*').eq('id', shopId).maybeSingle();
       const tenantUuid = shop?.server_id;
 
       let sub: any = null;
@@ -122,15 +122,17 @@ export class PlanModulesGuard implements CanActivate {
         }
       }
 
-      // Vérifier si l'abonnement a expiré (y compris la période de grâce)
+      // Vérifier si l'abonnement a expiré (y compris la période de grâce de 7 jours par défaut)
       const expiresAt = sub?.expires_at ? new Date(sub.expires_at).getTime() : 0;
-      const graceUntil = sub?.grace_until ? new Date(sub.grace_until).getTime() : 0;
+      const graceUntil = sub?.grace_until
+        ? new Date(sub.grace_until).getTime()
+        : (expiresAt ? expiresAt + 7 * 86400000 : 0);
       const isExpired = sub ? (now > (graceUntil || expiresAt)) : false;
 
-      let planCode = sub?.plan_code || shop?.plan || 'FREE';
+      let planCode = sub?.plan_code || (shop as any)?.plan || 'FREE';
       let status = sub?.status || 'ACTIVE';
 
-      // Rétrogradation douce en forfait FREE permanent si expiré ou révoqué
+      // Rétrogradation douce en forfait FREE permanent si expiré au-delà de la grâce ou révoqué
       if (isExpired || status === 'EXPIRED' || status === 'REVOKED' || status === 'SUSPENDED') {
         planCode = 'FREE';
         status = 'FALLBACK_FREE';
@@ -141,7 +143,7 @@ export class PlanModulesGuard implements CanActivate {
 
       const defaultModules: Record<string, string[]> = {
         FREE: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
-        ESSENTIEL: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
+        ESSENTIEL: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC', 'SALES_ORDERS'],
         PRO: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG'],
         BUSINESS: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG', 'STOCK_TRANSFERS', 'FX_EXCHANGE', 'MULTI_SHOP'],
         ENTERPRISE: ['ALL_MODULES'],
@@ -160,6 +162,10 @@ export class PlanModulesGuard implements CanActivate {
       if (!grantedModules.includes('PROCUREMENT') && !grantedModules.includes('ALL_MODULES')) {
         grantedModules = [...grantedModules, 'PROCUREMENT'];
       }
+      // S'assurer que SALES_ORDERS (Commandes clients) est garanti pour les forfaits PRO, BUSINESS, ENTERPRISE
+      if (['PRO', 'BUSINESS', 'ENTERPRISE'].includes(planCode) && !grantedModules.includes('SALES_ORDERS') && !grantedModules.includes('ALL_MODULES')) {
+        grantedModules = [...grantedModules, 'SALES_ORDERS'];
+      }
       const capabilities = planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE;
 
       const result = {
@@ -175,11 +181,11 @@ export class PlanModulesGuard implements CanActivate {
     } catch {
       // Fallback résilient en cas de déconnexion de la BDD
       const fallback = {
-        planCode: 'FREE',
+        planCode: 'PRO',
         status: 'OFFLINE_FALLBACK',
-        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
-        capabilities: [],
-        cachedUntil: now + 10000,
+        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC', 'SALES_ORDERS', 'REPORTS_ADVANCED', 'AUDIT_LOG'],
+        capabilities: ['CLOUD_SYNC'],
+        cachedUntil: now + 5000,
       };
       return fallback;
     }
