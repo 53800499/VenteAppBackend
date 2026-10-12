@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -33,80 +34,104 @@ export class OpenCashSessionDto {
   openingMomo?: number;
 }
 
-export class CloseCashSessionDto {
-  @ApiProperty()
+export class SubmitCashSessionClosingDto {
+  @ApiProperty({ description: 'Espèces réellement comptées' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   countedCash!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Mobile Money réellement compté / vérifié' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   countedMomo!: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Note ou observation générale de clôture' })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   closingNote?: string;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Total des ventes en espèces' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   salesCash!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Total des ventes en Mobile Money' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   salesMomo!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Total des dépenses en espèces' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   expensesCash!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Total des dépenses en Mobile Money' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   expensesMomo!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Entrées diverses en espèces' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   depositsCash!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Entrées diverses en Mobile Money' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   depositsMomo!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Retraits / sorties diverses en espèces' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   withdrawalsCash!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Retraits / sorties diverses en Mobile Money' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   withdrawalsMomo!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Nombre de ventes conclues' })
   @Type(() => Number)
   @IsInt()
   @Min(0)
   saleCount!: number;
 
-  @ApiPropertyOptional({ description: 'PIN patron (obligatoire si vendeur)' })
+  @ApiPropertyOptional({
+    description: 'Catégorie de justification si écart constaté',
+    enum: [
+      'unconfirmed_payment',
+      'pending_transaction',
+      'entry_error',
+      'unrecorded_expense',
+      'network_fee',
+      'cash_breakage',
+      'other',
+    ],
+  })
+  @IsOptional()
+  @IsString()
+  justificationCategory?: string;
+
+  @ApiPropertyOptional({ description: 'Explication détaillée de l’écart par l’employé' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  justificationNote?: string;
+}
+
+export class CloseCashSessionDto extends SubmitCashSessionClosingDto {
+  @ApiPropertyOptional({ description: 'PIN patron (optionnel si validation sur place)' })
   @IsOptional()
   @IsString()
   @MinLength(4)
@@ -114,12 +139,29 @@ export class CloseCashSessionDto {
   ownerPin?: string;
 }
 
-export class CreateCashMovementDto {
-  @ApiProperty({ enum: ['deposit', 'withdrawal'] })
+export class ApproveCashSessionDto {
+  @ApiPropertyOptional({ description: 'Commentaire ou décision du responsable' })
+  @IsOptional()
   @IsString()
-  movementType!: 'deposit' | 'withdrawal';
+  @MaxLength(500)
+  reviewNote?: string;
+}
 
-  @ApiProperty({ enum: ['cash', 'mtn_momo', 'moov_money'] })
+export class ReopenCashSessionDto {
+  @ApiProperty({ description: 'Motif de réouverture obligatoire' })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class CreateCashMovementDto {
+  @ApiProperty({ enum: ['deposit', 'withdrawal', 'owner_drop', 'bank_deposit'] })
+  @IsString()
+  @IsIn(['deposit', 'withdrawal', 'owner_drop', 'bank_deposit'])
+  movementType!: 'deposit' | 'withdrawal' | 'owner_drop' | 'bank_deposit';
+
+  @ApiProperty({ enum: ['cash', 'momo', 'mtn_momo', 'moov_money', 'celtis', 'bank', 'other'] })
   @IsString()
   registerType!: string;
 
@@ -130,6 +172,24 @@ export class CreateCashMovementDto {
   amount!: number;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+export class OwnerDropCashDto {
+  @ApiProperty({ enum: ['cash', 'mtn_momo', 'moov_money', 'celtis', 'bank'], default: 'cash' })
+  @IsString()
+  registerType: string = 'cash';
+
+  @ApiProperty({ description: 'Montant remis au patron (FCFA)' })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  amount!: number;
+
+  @ApiPropertyOptional({ description: 'Note ou reçu de remise' })
   @IsOptional()
   @IsString()
   @MaxLength(500)

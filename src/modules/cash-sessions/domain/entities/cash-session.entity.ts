@@ -1,4 +1,11 @@
-export type CashSessionStatus = 'open' | 'closed';
+export type CashSessionStatus =
+  | 'open'
+  | 'submitted'
+  | 'review_required'
+  | 'justified'
+  | 'approved'
+  | 'reopened'
+  | 'closed';
 
 export interface CashSession {
   id: number;
@@ -7,6 +14,10 @@ export interface CashSession {
   closedBy: number | null;
   openedAt: number;
   closedAt: number | null;
+  submittedAt: number | null;
+  submittedBy: number | null;
+  approvedAt: number | null;
+  approvedBy: number | null;
   openingCash: number;
   openingMomo: number;
   salesCash: number;
@@ -26,6 +37,9 @@ export interface CashSession {
   saleCount: number;
   status: CashSessionStatus;
   closingNote: string | null;
+  justificationCategory: string | null;
+  justificationNote: string | null;
+  reviewNote: string | null;
   createdAt: number;
   updatedAt: number;
 }

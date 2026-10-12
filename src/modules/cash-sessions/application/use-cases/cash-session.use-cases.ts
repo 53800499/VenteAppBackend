@@ -10,11 +10,15 @@ import { UserRepository } from '../../../users/domain/repositories/user.reposito
 import { CashSessionRepository } from '../../domain/repositories/cash-session.repository';
 import { CashSessionValidationService } from '../../domain/services/cash-session-validation.service';
 import {
+  ApproveCashSessionDto,
   CloseCashSessionDto,
   CreateCashMovementDto,
   ListCashMovementsQueryDto,
   ListCashSessionsQueryDto,
   OpenCashSessionDto,
+  OwnerDropCashDto,
+  ReopenCashSessionDto,
+  SubmitCashSessionClosingDto,
 } from '../dto/cash-session.dto';
 
 @Injectable()
@@ -76,6 +80,130 @@ export class CreateCashMovementUseCase {
 }
 
 @Injectable()
+export class RecordOwnerDropUseCase {
+  constructor(
+    private readonly sessions: CashSessionRepository,
+    private readonly validation: CashSessionValidationService,
+  ) {}
+
+  async execute(auth: AuthContext, sessionId: number, dto: OwnerDropCashDto) {
+    const amount = this.validation.assertPositiveAmount(
+      'Montant de la remise de fonds',
+      dto.amount,
+    );
+    return this.sessions.createMovement(auth.shopId, sessionId, {
+      movementType: 'owner_drop',
+      registerType: dto.registerType || 'cash',
+      amount,
+      note: dto.note ?? 'Remise de fonds au propriétaire',
+      createdBy: auth.userId,
+    });
+  }
+}
+
+@Injectable()
+export class SubmitCashSessionClosingUseCase {
+  constructor(
+    private readonly sessions: CashSessionRepository,
+    private readonly validation: CashSessionValidationService,
+  ) {}
+
+  async execute(
+    auth: AuthContext,
+    sessionId: number,
+    dto: SubmitCashSessionClosingDto,
+  ) {
+    return this.sessions.submitClosing(auth.shopId, sessionId, {
+      countedCash: this.validation.assertNonNegativeAmount(
+        'Montant compté espèces',
+        dto.countedCash,
+      ),
+      countedMomo: this.validation.assertNonNegativeAmount(
+        'Montant compté MoMo',
+        dto.countedMomo,
+      ),
+      salesCash: this.validation.assertNonNegativeAmount(
+        'Ventes espèces',
+        dto.salesCash,
+      ),
+      salesMomo: this.validation.assertNonNegativeAmount(
+        'Ventes MoMo',
+        dto.salesMomo,
+      ),
+      expensesCash: this.validation.assertNonNegativeAmount(
+        'Dépenses espèces',
+        dto.expensesCash,
+      ),
+      expensesMomo: this.validation.assertNonNegativeAmount(
+        'Dépenses MoMo',
+        dto.expensesMomo,
+      ),
+      depositsCash: this.validation.assertNonNegativeAmount(
+        'Entrées espèces',
+        dto.depositsCash,
+      ),
+      depositsMomo: this.validation.assertNonNegativeAmount(
+        'Entrées MoMo',
+        dto.depositsMomo,
+      ),
+      withdrawalsCash: this.validation.assertNonNegativeAmount(
+        'Retraits espèces',
+        dto.withdrawalsCash,
+      ),
+      withdrawalsMomo: this.validation.assertNonNegativeAmount(
+        'Retraits MoMo',
+        dto.withdrawalsMomo,
+      ),
+      saleCount: this.validation.assertNonNegativeAmount(
+        'Nombre de ventes',
+        dto.saleCount,
+      ),
+      closingNote: dto.closingNote ?? null,
+      justificationCategory: dto.justificationCategory ?? null,
+      justificationNote: dto.justificationNote ?? null,
+      submittedBy: auth.userId,
+    });
+  }
+}
+
+@Injectable()
+export class ApproveCashSessionUseCase {
+  constructor(private readonly sessions: CashSessionRepository) {}
+
+  async execute(
+    auth: AuthContext,
+    sessionId: number,
+    dto: ApproveCashSessionDto,
+  ) {
+    return this.sessions.approveClosing(auth.shopId, sessionId, {
+      approvedBy: auth.userId,
+      reviewNote: dto.reviewNote ?? null,
+    });
+  }
+}
+
+@Injectable()
+export class ReopenCashSessionUseCase {
+  constructor(private readonly sessions: CashSessionRepository) {}
+
+  async execute(
+    auth: AuthContext,
+    sessionId: number,
+    dto: ReopenCashSessionDto,
+  ) {
+    if (!dto.reason || dto.reason.trim().length < 5) {
+      throw new BadRequestException(
+        'Un motif de réouverture de 5 caractères minimum est requis.',
+      );
+    }
+    return this.sessions.reopenSession(auth.shopId, sessionId, {
+      reopenedBy: auth.userId,
+      reason: dto.reason.trim(),
+    });
+  }
+}
+
+@Injectable()
 export class CloseCashSessionUseCase {
   constructor(
     private readonly sessions: CashSessionRepository,
@@ -89,7 +217,7 @@ export class CloseCashSessionUseCase {
       const pin = dto.ownerPin?.trim() ?? '';
       if (pin.length < 4) {
         throw new BadRequestException(
-          'Le PIN du patron est requis pour clôturer la caisse.',
+          'Le PIN du patron est requis pour clôturer la caisse directement.',
         );
       }
       const users = await this.users.findAllByShop(auth.shopId);
@@ -150,6 +278,8 @@ export class CloseCashSessionUseCase {
         dto.saleCount,
       ),
       closedBy: auth.userId,
+      justificationCategory: dto.justificationCategory ?? null,
+      justificationNote: dto.justificationNote ?? null,
     });
   }
 }

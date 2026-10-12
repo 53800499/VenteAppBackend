@@ -67,6 +67,7 @@ export enum Permission {
   CASH_SESSIONS_OPEN = 'cash_sessions:open',
   CASH_SESSIONS_CLOSE = 'cash_sessions:close',
   CASH_SESSIONS_ADJUST = 'cash_sessions:adjust',
+  CASH_SESSIONS_APPROVE = 'cash_sessions:approve',
 
   // Boutiques (multi-boutiques V3)
   SHOPS_READ = 'shops:read',

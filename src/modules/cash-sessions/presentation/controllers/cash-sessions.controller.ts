@@ -26,18 +26,26 @@ import type { AuthContext } from '../../../../shared/interfaces/auth-context.int
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
 import { TenantGuard } from '../../../tenants/tenant.guard';
 import {
+  ApproveCashSessionDto,
   CloseCashSessionDto,
   CreateCashMovementDto,
   ListCashMovementsQueryDto,
   ListCashSessionsQueryDto,
   OpenCashSessionDto,
+  OwnerDropCashDto,
+  ReopenCashSessionDto,
+  SubmitCashSessionClosingDto,
 } from '../../application/dto/cash-session.dto';
 import {
+  ApproveCashSessionUseCase,
   CloseCashSessionUseCase,
   CreateCashMovementUseCase,
   ListCashMovementsUseCase,
   ListCashSessionsUseCase,
   OpenCashSessionUseCase,
+  RecordOwnerDropUseCase,
+  ReopenCashSessionUseCase,
+  SubmitCashSessionClosingUseCase,
 } from '../../application/use-cases/cash-session.use-cases';
 
 @ApiTags('Gestion de caisse')
@@ -51,6 +59,10 @@ export class CashSessionsController {
     private readonly listMovements: ListCashMovementsUseCase,
     private readonly openSession: OpenCashSessionUseCase,
     private readonly createMovement: CreateCashMovementUseCase,
+    private readonly recordOwnerDrop: RecordOwnerDropUseCase,
+    private readonly submitClosingUseCase: SubmitCashSessionClosingUseCase,
+    private readonly approveClosingUseCase: ApproveCashSessionUseCase,
+    private readonly reopenSessionUseCase: ReopenCashSessionUseCase,
     private readonly closeSession: CloseCashSessionUseCase,
   ) {}
 
@@ -70,10 +82,62 @@ export class CashSessionsController {
     return this.openSession.execute(auth, dto);
   }
 
+  @Post('cash-sessions/:id/submit-closing')
+  @RequirePermissions(Permission.CASH_SESSIONS_CLOSE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Soumettre la clôture de caisse (par l’employé avec justification des écarts)' })
+  @ApiOkResponse({ description: 'Clôture soumise avec statut submitted, review_required ou justified' })
+  submitClosing(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SubmitCashSessionClosingDto,
+  ) {
+    return this.submitClosingUseCase.execute(auth, id, dto);
+  }
+
+  @Post('cash-sessions/:id/approve')
+  @RequirePermissions(Permission.CASH_SESSIONS_APPROVE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Approuver une clôture de caisse (par le propriétaire ou responsable)' })
+  @ApiOkResponse({ description: 'Session approuvée' })
+  approve(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ApproveCashSessionDto,
+  ) {
+    return this.approveClosingUseCase.execute(auth, id, dto);
+  }
+
+  @Post('cash-sessions/:id/reopen')
+  @RequirePermissions(Permission.CASH_SESSIONS_APPROVE)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Rouvrir exceptionnellement une session de caisse avec motif' })
+  @ApiOkResponse({ description: 'Session rouverte' })
+  reopen(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReopenCashSessionDto,
+  ) {
+    return this.reopenSessionUseCase.execute(auth, id, dto);
+  }
+
+  @Post('cash-sessions/:id/owner-drop')
+  @RequirePermissions(Permission.CASH_SESSIONS_ADJUST)
+  @ApiParam({ name: 'id' })
+  @ApiOperation({ summary: 'Enregistrer une remise de fonds au propriétaire (cash drop)' })
+  @ApiCreatedResponse({ description: 'Remise de fonds enregistrée' })
+  ownerDrop(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: OwnerDropCashDto,
+  ) {
+    return this.recordOwnerDrop.execute(auth, id, dto);
+  }
+
   @Post('cash-sessions/:id/close')
   @RequirePermissions(Permission.CASH_SESSIONS_CLOSE)
   @ApiParam({ name: 'id' })
-  @ApiOperation({ summary: 'Clôturer une session de caisse' })
+  @ApiOperation({ summary: 'Clôturer directement une session de caisse (avec validation patron immédiate)' })
   @ApiOkResponse({ description: 'Session clôturée' })
   close(
     @CurrentAuth() auth: AuthContext,
@@ -86,7 +150,7 @@ export class CashSessionsController {
   @Post('cash-sessions/:id/movements')
   @RequirePermissions(Permission.CASH_SESSIONS_ADJUST)
   @ApiParam({ name: 'id' })
-  @ApiOperation({ summary: 'Enregistrer un mouvement de caisse' })
+  @ApiOperation({ summary: 'Enregistrer un mouvement de caisse standard (apport ou retrait)' })
   @ApiCreatedResponse({ description: 'Mouvement créé' })
   movement(
     @CurrentAuth() auth: AuthContext,
@@ -99,6 +163,7 @@ export class CashSessionsController {
   @Get('cash-movements')
   @RequirePermissions(Permission.CASH_SESSIONS_READ)
   @ApiOperation({ summary: 'Lister les mouvements de caisse' })
+  @ApiOkResponse({ description: 'Liste des mouvements de caisse' })
   movements(@CurrentAuth() auth: AuthContext, @Query() query: ListCashMovementsQueryDto) {
     return this.listMovements.execute(auth, query);
   }

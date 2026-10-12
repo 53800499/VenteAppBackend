@@ -1,13 +1,17 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../../../infrastructure/supabase/supabase.service';
 import { nowMs } from '../../../../shared/utils/time.util';
-import { CashSession } from '../../domain/entities/cash-session.entity';
+import { CashSession, CashSessionStatus } from '../../domain/entities/cash-session.entity';
 import {
+  ApproveCashSessionClosingData,
   CashMovementRecord,
+  CashMovementType,
   CashSessionRepository,
   CloseCashSessionData,
   CreateCashMovementData,
   OpenCashSessionData,
+  ReopenCashSessionData,
+  SubmitCashSessionClosingData,
 } from '../../domain/repositories/cash-session.repository';
 import { CashSessionValidationService } from '../../domain/services/cash-session-validation.service';
 
@@ -18,6 +22,10 @@ interface CashSessionRow {
   closed_by: number | null;
   opened_at: number;
   closed_at: number | null;
+  submitted_at: number | null;
+  submitted_by: number | null;
+  approved_at: number | null;
+  approved_by: number | null;
   opening_cash: number;
   opening_momo: number;
   sales_cash: number;
@@ -35,8 +43,11 @@ interface CashSessionRow {
   difference_cash: number | null;
   difference_momo: number | null;
   sale_count: number;
-  status: 'open' | 'closed';
+  status: CashSessionStatus;
   closing_note: string | null;
+  justification_category: string | null;
+  justification_note: string | null;
+  review_note: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -45,7 +56,7 @@ interface CashMovementRow {
   id: number;
   shop_id: number;
   session_id: number;
-  movement_type: 'deposit' | 'withdrawal';
+  movement_type: CashMovementType;
   register_type: string;
   amount: number;
   note: string | null;
@@ -78,7 +89,7 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
       .from('cash_sessions')
       .select('*')
       .eq('shop_id', shopId)
-      .eq('status', 'open')
+      .in('status', ['open', 'reopened'])
       .order('opened_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -126,6 +137,163 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
     return this.toDomain(inserted as CashSessionRow);
   }
 
+  async submitClosing(
+    shopId: number,
+    sessionId: number,
+    data: SubmitCashSessionClosingData,
+  ): Promise<CashSession> {
+    const session = await this.findByIdAndShop(sessionId, shopId);
+    if (!session) throw new NotFoundException('Session introuvable.');
+    if (session.status !== 'open' && session.status !== 'reopened') {
+      throw new ConflictException(
+        `Cette session ne peut pas être soumise pour clôture (statut actuel : ${session.status}).`,
+      );
+    }
+
+    const expectedCash = this.validation.computeExpectedCash({
+      openingCash: session.openingCash,
+      salesCash: data.salesCash,
+      depositsCash: data.depositsCash,
+      expensesCash: data.expensesCash,
+      withdrawalsCash: data.withdrawalsCash,
+    });
+    const expectedMomo = this.validation.computeExpectedMomo({
+      openingMomo: session.openingMomo,
+      salesMomo: data.salesMomo,
+      depositsMomo: data.depositsMomo,
+      expensesMomo: data.expensesMomo,
+      withdrawalsMomo: data.withdrawalsMomo,
+    });
+
+    const diffCash = data.countedCash - expectedCash;
+    const diffMomo = data.countedMomo - expectedMomo;
+    const hasDiscrepancy = diffCash !== 0 || diffMomo !== 0;
+
+    let targetStatus: CashSessionStatus = 'submitted';
+    if (hasDiscrepancy) {
+      if (data.justificationCategory || data.justificationNote) {
+        targetStatus = 'justified';
+      } else {
+        targetStatus = 'review_required';
+      }
+    }
+
+    const timestamp = nowMs();
+    const patch = {
+      closed_by: data.submittedBy,
+      closed_at: timestamp,
+      submitted_by: data.submittedBy,
+      submitted_at: timestamp,
+      sales_cash: data.salesCash,
+      sales_momo: data.salesMomo,
+      expenses_cash: data.expensesCash,
+      expenses_momo: data.expensesMomo,
+      deposits_cash: data.depositsCash,
+      deposits_momo: data.depositsMomo,
+      withdrawals_cash: data.withdrawalsCash,
+      withdrawals_momo: data.withdrawalsMomo,
+      expected_cash: expectedCash,
+      expected_momo: expectedMomo,
+      counted_cash: data.countedCash,
+      counted_momo: data.countedMomo,
+      difference_cash: diffCash,
+      difference_momo: diffMomo,
+      sale_count: data.saleCount,
+      status: targetStatus,
+      closing_note: data.closingNote ?? null,
+      justification_category: data.justificationCategory ?? null,
+      justification_note: data.justificationNote ?? null,
+      updated_at: timestamp,
+    };
+
+    const { data: updated, error } = await this.supabase.db
+      .from('cash_sessions')
+      .update(patch)
+      .eq('id', sessionId)
+      .eq('shop_id', shopId)
+      .select('*')
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return this.toDomain(updated as CashSessionRow);
+  }
+
+  async approveClosing(
+    shopId: number,
+    sessionId: number,
+    data: ApproveCashSessionClosingData,
+  ): Promise<CashSession> {
+    const session = await this.findByIdAndShop(sessionId, shopId);
+    if (!session) throw new NotFoundException('Session introuvable.');
+    if (session.status === 'open') {
+      throw new ConflictException(
+        'La session est toujours ouverte. Elle doit être soumise avant approbation.',
+      );
+    }
+    if (session.status === 'approved') {
+      throw new ConflictException('Cette session est déjà approuvée.');
+    }
+
+    const timestamp = nowMs();
+    const patch = {
+      approved_by: data.approvedBy,
+      approved_at: timestamp,
+      status: 'approved',
+      review_note: data.reviewNote ?? session.reviewNote,
+      updated_at: timestamp,
+    };
+
+    const { data: updated, error } = await this.supabase.db
+      .from('cash_sessions')
+      .update(patch)
+      .eq('id', sessionId)
+      .eq('shop_id', shopId)
+      .select('*')
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return this.toDomain(updated as CashSessionRow);
+  }
+
+  async reopenSession(
+    shopId: number,
+    sessionId: number,
+    data: ReopenCashSessionData,
+  ): Promise<CashSession> {
+    const session = await this.findByIdAndShop(sessionId, shopId);
+    if (!session) throw new NotFoundException('Session introuvable.');
+    if (session.status === 'open') {
+      throw new ConflictException('Cette session est déjà ouverte.');
+    }
+
+    const currentlyOpen = await this.findOpenByShop(shopId);
+    if (currentlyOpen && currentlyOpen.id !== sessionId) {
+      throw new ConflictException(
+        'Une autre session est actuellement ouverte pour cette boutique.',
+      );
+    }
+
+    const timestamp = nowMs();
+    const notePrefix = session.reviewNote ? `${session.reviewNote}\n` : '';
+    const updatedReviewNote = `${notePrefix}[Réouverture ${new Date(timestamp).toISOString()}] : ${data.reason}`;
+
+    const patch = {
+      status: 'reopened',
+      closed_at: null,
+      closed_by: null,
+      review_note: updatedReviewNote,
+      updated_at: timestamp,
+    };
+
+    const { data: updated, error } = await this.supabase.db
+      .from('cash_sessions')
+      .update(patch)
+      .eq('id', sessionId)
+      .eq('shop_id', shopId)
+      .select('*')
+      .single();
+    if (error) throw new BadRequestException(error.message);
+    return this.toDomain(updated as CashSessionRow);
+  }
+
   async closeSession(
     shopId: number,
     sessionId: number,
@@ -133,7 +301,7 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
   ): Promise<CashSession> {
     const session = await this.findByIdAndShop(sessionId, shopId);
     if (!session) throw new NotFoundException('Session introuvable.');
-    if (session.status !== 'open') {
+    if (session.status !== 'open' && session.status !== 'reopened') {
       throw new ConflictException('Cette session est déjà clôturée.');
     }
 
@@ -173,6 +341,8 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
       sale_count: data.saleCount,
       status: 'closed',
       closing_note: data.closingNote ?? null,
+      justification_category: data.justificationCategory ?? null,
+      justification_note: data.justificationNote ?? null,
       updated_at: timestamp,
     };
 
@@ -205,8 +375,10 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
   ): Promise<CashMovementRecord> {
     const session = await this.findByIdAndShop(sessionId, shopId);
     if (!session) throw new NotFoundException('Session introuvable.');
-    if (session.status !== 'open') {
-      throw new ConflictException('Cette session est déjà clôturée.');
+    if (session.status !== 'open' && session.status !== 'reopened') {
+      throw new ConflictException(
+        `Impossible d'ajouter un mouvement : la session n'est pas ouverte (statut : ${session.status}).`,
+      );
     }
 
     const timestamp = nowMs();
@@ -250,6 +422,10 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
       closedBy: row.closed_by,
       openedAt: row.opened_at,
       closedAt: row.closed_at,
+      submittedAt: row.submitted_at,
+      submittedBy: row.submitted_by,
+      approvedAt: row.approved_at,
+      approvedBy: row.approved_by,
       openingCash: row.opening_cash,
       openingMomo: row.opening_momo,
       salesCash: row.sales_cash,
@@ -269,6 +445,9 @@ export class SupabaseCashSessionRepository extends CashSessionRepository {
       saleCount: row.sale_count,
       status: row.status,
       closingNote: row.closing_note,
+      justificationCategory: row.justification_category,
+      justificationNote: row.justification_note,
+      reviewNote: row.review_note,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
