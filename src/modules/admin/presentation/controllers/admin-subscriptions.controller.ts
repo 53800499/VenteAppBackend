@@ -68,9 +68,25 @@ export class AdminSubscriptionsController {
     try {
       let { data: shops } = await db.from('shops').select('*');
       const { data: orgs } = await db.from('organizations').select('*');
+      const { data: allSettings } = await db.from('settings').select('shop_id, shop_name, shop_phone');
+      const { data: allUsers } = await db.from('users').select('id, name, phone, shop_id, role');
       const { data: allSubs } = await db.from('subscriptions').select('*, subscription_plans(*)').order('created_at', { ascending: false });
 
-      const orgMap = new Map((orgs || []).map((o: any) => [o.id, o]));
+      const orgByRootShop = new Map();
+      const orgById = new Map();
+      (orgs || []).forEach((o: any) => {
+        if (o.root_shop_id) orgByRootShop.set(o.root_shop_id, o);
+        orgById.set(o.id, o);
+      });
+
+      const settingsMap = new Map((allSettings || []).map((st: any) => [st.shop_id, st]));
+      const userByShop = new Map();
+      (allUsers || []).forEach((u: any) => {
+        if (u.role === 'owner' || u.role === 'DIRIGEANT' || !userByShop.has(u.shop_id)) {
+          userByShop.set(u.shop_id, u);
+        }
+      });
+
       const subMap = new Map();
       (allSubs || []).forEach((s: any) => {
         if (!subMap.has(s.tenant_id)) subMap.set(s.tenant_id, s);
@@ -87,7 +103,9 @@ export class AdminSubscriptionsController {
       }
 
       return (shops || []).map((shop: any) => {
-        const org = (orgMap.get(shop.organization_id) || {}) as any;
+        const org = orgByRootShop.get(shop.id) || (shop.organization_id ? orgById.get(shop.organization_id) : undefined) || {};
+        const setting = settingsMap.get(shop.id);
+        const owner = userByShop.get(shop.id);
         const sub = subMap.get(shop.server_id);
         const expiresAt = sub?.expires_at || new Date(Date.now() + 30 * 86400000).toISOString();
         const plan = sub?.plan_code || 'PRO';
@@ -104,11 +122,35 @@ export class AdminSubscriptionsController {
           status = 'EXPIRING_SOON';
         }
 
+        // Résolution prioritaire et précise du nom réel de l'entreprise
+        let realEnterpriseName = org.name;
+        if (!realEnterpriseName && setting?.shop_name && setting.shop_name !== 'Default Shop' && setting.shop_name !== 'Boutique Principale') {
+          realEnterpriseName = setting.shop_name;
+        }
+        if (!realEnterpriseName && shop.name && shop.name !== 'Default Shop' && shop.name !== 'Boutique Principale') {
+          realEnterpriseName = shop.name;
+        }
+        if (!realEnterpriseName && setting?.shop_name) {
+          realEnterpriseName = setting.shop_name;
+        }
+        if (!realEnterpriseName && shop.name) {
+          realEnterpriseName = shop.name;
+        }
+        if (!realEnterpriseName && owner?.name) {
+          realEnterpriseName = `Entreprise de ${owner.name}`;
+        }
+        if (!realEnterpriseName) {
+          realEnterpriseName = `Entreprise #${shop.id}`;
+        }
+
+        const realPhone = shop.phone || setting?.shop_phone || org.phone || owner?.phone || '';
+
         return {
           tenantId: `tenant-${shop.id}`,
           numericShopId: shop.id,
-          tenantName: shop.name || org.name || `Entreprise #${shop.id}`,
-          phone: shop.phone || org.phone || '',
+          tenantName: realEnterpriseName,
+          phone: realPhone,
+          ownerName: owner?.name || '',
           plan,
           status,
           daysLeft: daysLeft > 0 ? daysLeft : 0,

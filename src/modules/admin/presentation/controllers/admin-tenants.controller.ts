@@ -41,6 +41,8 @@ export class AdminTenantsController {
     try {
       const { data: orgs } = await db.from('organizations').select('*');
       const { data: allShops } = await db.from('shops').select('*');
+      const { data: allSettings } = await db.from('settings').select('shop_id, shop_name, shop_phone');
+      const settingsMap = new Map((allSettings || []).map((s: any) => [s.shop_id, s]));
 
       if (orgs && orgs.length > 0) {
         const tenants = await Promise.all(
@@ -63,13 +65,21 @@ export class AdminTenantsController {
               .is('revoked_at', null);
 
             const rootShop = (allShops || []).find((s: any) => s.id === org.root_shop_id);
+            const setting = settingsMap.get(rootShop?.id);
+
+            let realName = org.name;
+            if (!realName && setting?.shop_name && setting.shop_name !== 'Default Shop') realName = setting.shop_name;
+            if (!realName && rootShop?.name && rootShop.name !== 'Default Shop') realName = rootShop.name;
+            if (!realName) realName = org.name || rootShop?.name || `Entreprise #${org.id}`;
+
+            const realPhone = rootShop?.phone || setting?.shop_phone || org.phone || '+229 00 00 00 00';
 
             return {
               id: `tenant-${org.root_shop_id || org.id}`,
               numericShopId: org.root_shop_id || org.id,
               organizationId: org.id,
-              name: org.name || rootShop?.name || `Entreprise #${org.id}`,
-              phone: rootShop?.phone || '+229 00 00 00 00',
+              name: realName,
+              phone: realPhone,
               country: 'Bénin',
               plan: 'PRO',
               status: rootShop?.is_active !== false ? 'ACTIVE' : 'SUSPENDED',
@@ -135,11 +145,16 @@ export class AdminTenantsController {
 
           const ownerUser = (users || []).find((u: any) => u.role === 'owner' || u.role === 'DIRIGEANT') || users?.[0];
 
+          const setting = settingsMap.get(rootShop.id);
+          let realName = setting?.shop_name && setting.shop_name !== 'Default Shop' ? setting.shop_name : rootShop.name;
+          if (!realName && ownerUser?.name) realName = `Entreprise de ${ownerUser.name}`;
+          if (!realName) realName = `Entreprise #${rootShop.id}`;
+
           return {
             id: `tenant-${rootShop.id}`,
             numericShopId: rootShop.id,
-            name: rootShop.name || `Entreprise #${rootShop.id}`,
-            phone: rootShop.phone || ownerUser?.phone || '+229 00 00 00 00',
+            name: realName,
+            phone: rootShop.phone || setting?.shop_phone || ownerUser?.phone || '+229 00 00 00 00',
             country: 'Bénin',
             plan: 'STANDARD',
             status: rootShop.is_active !== false ? 'ACTIVE' : 'SUSPENDED',
