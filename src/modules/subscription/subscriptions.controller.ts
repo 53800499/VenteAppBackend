@@ -209,13 +209,29 @@ export class SubscriptionsController {
       let planCode = sub?.plan_code || shop?.plan || 'FREE';
       let computedStatus = sub?.status || (expiresAt.getTime() > now ? 'ACTIVE' : (graceUntil.getTime() > now ? 'GRACE' : 'EXPIRED'));
 
-      // Rétrogradation douce en forfait permanent GRATUIT si expiré
-      if (isExpired || computedStatus === 'EXPIRED') {
+      // Si le compte ou la souscription est en attente de validation back-office
+      if (sub?.status === 'PENDING_ACTIVATION' || shop?.is_active === false) {
+        computedStatus = 'PENDING_ACTIVATION';
+      } else if (isExpired || computedStatus === 'EXPIRED') {
+        // Rétrogradation douce en forfait permanent GRATUIT si expiré
         planCode = 'FREE';
         computedStatus = 'ACTIVE';
       }
 
       const { data: planData } = await db.from('subscription_plans').select('*').eq('code', planCode).maybeSingle();
+
+      // Vérifier si la contrainte de module liée aux abonnements est désactivée globalement par le back-office
+      let enforceModuleSubscription = true;
+      try {
+        const { data: policyRecord } = await db.from('platform_settings').select('general_json, licensing_policy_json').eq('id', 'default').maybeSingle();
+        if (policyRecord) {
+          const gen = policyRecord.general_json;
+          const lic = policyRecord.licensing_policy_json;
+          if (gen?.enforceModuleSubscription === false || lic?.enforceModuleSubscription === false) {
+            enforceModuleSubscription = false;
+          }
+        }
+      } catch {}
 
       const { count: currentUsersCount } = await db
         .from('users')
@@ -238,7 +254,9 @@ export class SubscriptionsController {
         ENTERPRISE: ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT', 'CUSTOM_INTEGRATIONS', 'DEDICATED_SUPPORT'],
       };
 
-      const grantedModules = planData?.granted_modules || defaultModulesMap[planCode] || defaultModulesMap.FREE;
+      const rawGrantedModules = planData?.granted_modules || defaultModulesMap[planCode] || defaultModulesMap.FREE;
+      // Si la contrainte de module liée aux abonnements est désactivée par le back-office, débloquer ALL_MODULES
+      const grantedModules = enforceModuleSubscription ? rawGrantedModules : ['ALL_MODULES'];
       const capabilities = planData?.capabilities || defaultCapabilitiesMap[planCode] || defaultCapabilitiesMap.FREE;
       const maxUsers = planData?.max_users || (planCode === 'BUSINESS' ? 30 : (planCode === 'PRO' ? 10 : (planCode === 'ESSENTIEL' ? 3 : 1)));
       const maxShops = planData?.max_shops || (planCode === 'BUSINESS' ? 5 : (planCode === 'PRO' ? 2 : 1));

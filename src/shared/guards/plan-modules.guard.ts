@@ -158,6 +158,19 @@ export class PlanModulesGuard implements CanActivate {
       };
 
       let grantedModules: string[] = planData?.granted_modules || defaultModules[planCode] || defaultModules.FREE;
+
+      // Vérifier si la contrainte de module liée aux abonnements est désactivée par le back-office
+      try {
+        const { data: policyRecord } = await db.from('platform_settings').select('general_json, licensing_policy_json').eq('id', 'default').maybeSingle();
+        if (policyRecord) {
+          const gen = policyRecord.general_json;
+          const lic = policyRecord.licensing_policy_json;
+          if (gen?.enforceModuleSubscription === false || lic?.enforceModuleSubscription === false) {
+            grantedModules = ['ALL_MODULES'];
+          }
+        }
+      } catch {}
+
       // S'assurer que le module essentiel PROCUREMENT (Approvisionnements) est accessible à tous les commerces
       if (!grantedModules.includes('PROCUREMENT') && !grantedModules.includes('ALL_MODULES')) {
         grantedModules = [...grantedModules, 'PROCUREMENT'];

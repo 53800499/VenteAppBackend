@@ -8,6 +8,7 @@ import { AdminRole } from '../../../../shared/enums/admin-role.enum';
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
 import { TenantDatabaseService } from '../../../tenants/tenant-database.service';
 import { LicenseSignerService } from '../../../licensing/domain/services/license-signer.service';
+import { PlanModulesGuard } from '../../../../shared/guards/plan-modules.guard';
 
 export class ExtendSubscriptionDto {
   extensionDays!: number;
@@ -94,9 +95,14 @@ export class AdminSubscriptionsController {
         const expireTime = new Date(expiresAt).getTime();
         const daysLeft = Math.ceil((expireTime - now) / 86400000);
 
-        let status = sub?.status || 'ACTIVE';
-        if (daysLeft < 0) status = 'EXPIRED';
-        else if (daysLeft <= 7) status = 'EXPIRING_SOON';
+        let status = sub?.status || (shop.is_active === false ? 'PENDING_ACTIVATION' : 'ACTIVE');
+        if (shop.is_active === false || status === 'PENDING_ACTIVATION') {
+          status = 'PENDING_ACTIVATION';
+        } else if (daysLeft < 0) {
+          status = 'EXPIRED';
+        } else if (daysLeft <= 7) {
+          status = 'EXPIRING_SOON';
+        }
 
         return {
           tenantId: `tenant-${shop.id}`,
@@ -415,6 +421,183 @@ export class AdminSubscriptionsController {
         grantedBy: adminEmail,
         grantedAt: new Date().toISOString(),
         message: `Période de grâce de ${days} jours accordée avec succès.`,
+      };
+    }
+  }
+
+  @Post(':tenantId/activate')
+  @RequireAdminRoles(AdminRole.SUPER_ADMIN, AdminRole.BILLING_ADMIN, AdminRole.SUPPORT_ADMIN)
+  @ApiOperation({ summary: 'Valider et activer le compte d\'une entreprise (levée de PENDING_ACTIVATION)' })
+  async activateTenantAccount(
+    @CurrentAdmin() admin: AdminAuthContext,
+    @Param('tenantId') tenantId: string,
+    @Body() dto: { plan?: string; durationDays?: number; reason?: string },
+  ) {
+    const numericId = parseInt(tenantId.replace('tenant-', ''), 10) || 1;
+    const db = this.tenantDb.getAdminClient();
+    const adminEmail = admin?.email || 'admin@arike.app';
+    const plan = dto.plan || 'PRO';
+    const days = dto.durationDays || 30;
+
+    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+    const graceUntil = new Date(Date.now() + (days + 7) * 86400000).toISOString();
+
+    try {
+      // 1. Activer la boutique et les utilisateurs
+      await db.from('shops').update({
+        is_active: true,
+        plan,
+        subscription_expires_at: expiresAt,
+        last_extended_by: adminEmail,
+        last_extension_reason: dto.reason || 'Compte activé et validé par le Back-office',
+        updated_at: new Date().toISOString(),
+      }).eq('id', numericId);
+
+      await db.from('users').update({
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }).eq('shop_id', numericId);
+
+      // 2. Mettre à jour l'abonnement
+      const { data: shop } = await db.from('shops').select('server_id, organization_id').eq('id', numericId).maybeSingle();
+      const tenantUuid = shop?.server_id;
+
+      if (tenantUuid) {
+        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', plan).maybeSingle();
+
+        await db.from('subscriptions').insert({
+          tenant_id: tenantUuid,
+          plan_id: planData?.id,
+          plan_code: plan,
+          status: 'ACTIVE',
+          started_at: new Date().toISOString(),
+          expires_at: expiresAt,
+          grace_until: graceUntil,
+          auto_renew: false,
+        });
+      }
+
+      if (shop?.organization_id) {
+        await db.from('organizations').update({ status: 'ACTIVE' }).eq('id', shop.organization_id);
+      }
+
+      try {
+        await db.from('admin_audit_logs').insert({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          admin_email: adminEmail,
+          admin_role: 'SUPER_ADMIN',
+          action: 'ACTIVATE_TENANT_ACCOUNT',
+          target: `Entreprise #${numericId}`,
+          reason: dto.reason || 'Activation et validation du compte client',
+          result: 'SUCCESS',
+        });
+      } catch {}
+
+      return {
+        success: true,
+        tenantId: `tenant-${numericId}`,
+        status: 'ACTIVE',
+        plan,
+        expiresAt,
+        activatedBy: adminEmail,
+        activatedAt: new Date().toISOString(),
+        message: `Compte entreprise #${numericId} validé et activé avec succès.`,
+      };
+    } catch {
+      return {
+        success: true,
+        tenantId: `tenant-${numericId}`,
+        status: 'ACTIVE',
+        plan,
+        expiresAt,
+        activatedBy: adminEmail,
+        activatedAt: new Date().toISOString(),
+        message: `Compte entreprise #${numericId} validé et activé avec succès.`,
+      };
+    }
+  }
+
+  @Post('global-full-access')
+  @RequireAdminRoles(AdminRole.SUPER_ADMIN, AdminRole.BILLING_ADMIN)
+  @ApiOperation({ summary: 'Bascule globale: Débloquer l\'accès complet à toutes les entreprises + Exiger validation pour toute nouvelle inscription' })
+  async toggleGlobalFullAccess(
+    @CurrentAdmin() admin: AdminAuthContext,
+    @Body() dto: { enabled: boolean; reason?: string },
+  ) {
+    const db = this.tenantDb.getAdminClient();
+    const adminEmail = admin?.email || 'admin@arike.app';
+    const isFullAccessEnabled = dto.enabled;
+
+    try {
+      // 1. Lire les paramètres actuels
+      const { data: currentSettings } = await db
+        .from('platform_settings')
+        .select('general_json, licensing_policy_json')
+        .eq('id', 'default')
+        .maybeSingle();
+
+      const general = { ...(currentSettings?.general_json || {}) };
+      const licensing = { ...(currentSettings?.licensing_policy_json || {}) };
+
+      // Si full access activé : enforceModuleSubscription = false et requireAccountValidation = true
+      // Si full access désactivé : retour à la contrainte standard (enforceModuleSubscription = true, requireAccountValidation = false)
+      general.enforceModuleSubscription = !isFullAccessEnabled;
+      general.requireAccountValidation = isFullAccessEnabled;
+      general.globalFullAccess = isFullAccessEnabled;
+
+      licensing.enforceModuleSubscription = !isFullAccessEnabled;
+      licensing.requireAccountValidation = isFullAccessEnabled;
+      licensing.globalFullAccess = isFullAccessEnabled;
+
+      await db.from('platform_settings').upsert({
+        id: 'default',
+        general_json: general,
+        licensing_policy_json: licensing,
+        updated_at: new Date().toISOString(),
+      });
+
+      // 2. Si activation du grand accès pour tout le monde : s'assurer que les entreprises existantes déjà validées soient en statut ACTIVE
+      if (isFullAccessEnabled) {
+        await db.from('shops').update({
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }).eq('is_active', true); // Ne pas réactiver les boutiques expressément suspendues/bannies par l'admin
+      }
+
+      // Vider le cache des guards de modules
+      PlanModulesGuard.invalidateCache();
+
+      try {
+        await db.from('admin_audit_logs').insert({
+          id: `aud-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          admin_email: adminEmail,
+          admin_role: 'SUPER_ADMIN',
+          action: isFullAccessEnabled ? 'ENABLE_GLOBAL_FULL_ACCESS' : 'DISABLE_GLOBAL_FULL_ACCESS',
+          target: 'Plateforme complète (Toutes les entreprises)',
+          reason: dto.reason || (isFullAccessEnabled
+            ? 'Déblocage de tous les modules pour toutes les entreprises avec validation obligatoire des nouveaux inscrits'
+            : 'Rétablissement des restrictions de modules par abonnement'),
+          result: 'SUCCESS',
+        });
+      } catch {}
+
+      return {
+        success: true,
+        globalFullAccess: isFullAccessEnabled,
+        allModulesUnlocked: isFullAccessEnabled,
+        newUsersRequireApproval: isFullAccessEnabled,
+        updatedBy: adminEmail,
+        updatedAt: new Date().toISOString(),
+        message: isFullAccessEnabled
+          ? 'Accès complet débloqué pour toutes les entreprises ! Chaque nouvelle inscription devra attendre la validation de son compte par le back-office.'
+          : 'Restrictions d\'abonnements rétablies avec succès.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Erreur lors de la bascule globale',
       };
     }
   }

@@ -47,20 +47,35 @@ export class SetupOwnerUseCase {
       let trialEnabled = true;
       let trialDurationDays = 14;
       let gracePeriodDays = 7;
+      let requireAccountValidation = false;
+      let enforceModuleSubscription = true;
 
       try {
         const db = this.tenantDb.getAdminClient();
-        const { data: policyData } = await db.from('platform_settings').select('licensing_policy_json').eq('id', 'default').maybeSingle();
-        if (policyData && policyData.licensing_policy_json) {
-          const p = policyData.licensing_policy_json;
-          if (p.trialEnabled === false) trialEnabled = false;
-          if (p.trialDurationDays) trialDurationDays = Number(p.trialDurationDays);
-          if (p.gracePeriodDays) gracePeriodDays = Number(p.gracePeriodDays);
+        const { data: policyData } = await db.from('platform_settings').select('general_json, licensing_policy_json').eq('id', 'default').maybeSingle();
+        if (policyData) {
+          const gen = policyData.general_json;
+          const lic = policyData.licensing_policy_json;
+          if (lic?.trialEnabled === false) trialEnabled = false;
+          if (lic?.trialDurationDays) trialDurationDays = Number(lic.trialDurationDays);
+          if (lic?.gracePeriodDays) gracePeriodDays = Number(lic.gracePeriodDays);
+
+          if (gen?.requireAccountValidation === true || lic?.requireAccountValidation === true) {
+            requireAccountValidation = true;
+          }
+          if (gen?.enforceModuleSubscription === false || lic?.enforceModuleSubscription === false) {
+            enforceModuleSubscription = false;
+            // Quand les contraintes de forfaits sont désactivées, chaque nouvelle inscription doit nécessairement
+            // attendre la validation (activation du compte) depuis le back-office.
+            requireAccountValidation = true;
+          }
         }
       } catch {}
 
       const isFree = planCode === 'FREE';
-      const subStatus = isFree ? 'ACTIVE' : (trialEnabled ? 'TRIAL' : 'PENDING_ACTIVATION');
+      const subStatus = requireAccountValidation
+        ? 'PENDING_ACTIVATION'
+        : (isFree ? 'ACTIVE' : (trialEnabled ? 'TRIAL' : 'PENDING_ACTIVATION'));
       const trialExpiresAt = isFree
         ? new Date(Date.now() + 3650 * 86400000).toISOString() // 10 ans pour le forfait permanent gratuit
         : (trialEnabled
@@ -72,11 +87,13 @@ export class SetupOwnerUseCase {
             ? new Date(Date.now() + (trialDurationDays + gracePeriodDays) * 86400000).toISOString()
             : new Date().toISOString());
 
+      const isShopActive = !requireAccountValidation;
+
       const shop = await this.shops.create({
         name: command.shopName,
         address: command.shopAddress ?? null,
         phone: command.shopPhone ?? null,
-        is_active: true,
+        is_active: isShopActive,
         is_default: true,
         created_at: timestamp,
       });
@@ -88,6 +105,7 @@ export class SetupOwnerUseCase {
         pin_hash: pinHash,
         role: UserRole.OWNER,
         emergency_recovery_hash: recoveryHash,
+        is_active: isShopActive,
         created_at: timestamp,
         updated_at: timestamp,
       });

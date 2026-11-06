@@ -42,6 +42,8 @@ export class AdminSettingsController {
       defaultLanguage: "fr",
       defaultCurrency: "FCFA",
       allowNewRegistrations: true,
+      requireAccountValidation: false,
+      enforceModuleSubscription: true,
       maintenanceMode: false,
     };
   }
@@ -355,6 +357,8 @@ export class AdminSettingsController {
       allowPlanChangeDuringTrial: true,
       offlineToleranceDays: 30,
       maxClockSkewMinutes: 60,
+      enforceModuleSubscription: true,
+      requireAccountValidation: false,
       restrictedModePermissions: {
         allowConsultation: true,
         allowPdfExport: true,
