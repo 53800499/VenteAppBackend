@@ -227,7 +227,12 @@ export class SubscriptionsController {
         if (policyRecord) {
           const gen = policyRecord.general_json;
           const lic = policyRecord.licensing_policy_json;
-          if (gen?.enforceModuleSubscription === false || lic?.enforceModuleSubscription === false) {
+          if (
+            gen?.enforceModuleSubscription === false ||
+            lic?.enforceModuleSubscription === false ||
+            gen?.globalFullAccess === true ||
+            lic?.globalFullAccess === true
+          ) {
             enforceModuleSubscription = false;
           }
         }
@@ -296,18 +301,26 @@ export class SubscriptionsController {
         paymentHistory,
       };
     } catch {
+      let isGlobalFullAccessActive = false;
+      try {
+        const { data: p } = await db.from('platform_settings').select('general_json').eq('id', 'default').maybeSingle();
+        if (p?.general_json?.globalFullAccess === true || p?.general_json?.enforceModuleSubscription === false) {
+          isGlobalFullAccessActive = true;
+        }
+      } catch {}
+
       return {
-        planCode: 'FREE',
-        planName: 'ARIKE Gratuit',
+        planCode: isGlobalFullAccessActive ? 'ENTERPRISE' : 'FREE',
+        planName: isGlobalFullAccessActive ? 'ARIKE Entreprise (Accès Global)' : 'ARIKE Gratuit',
         status: 'ACTIVE',
         startedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 365 * 86400000).toISOString(),
         graceUntil: new Date(Date.now() + 372 * 86400000).toISOString(),
         autoRenew: false,
-        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
-        capabilities: [],
-        maxUsers: 1,
-        maxShops: 1,
+        grantedModules: isGlobalFullAccessActive ? ['ALL_MODULES'] : ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
+        capabilities: isGlobalFullAccessActive ? ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT'] : [],
+        maxUsers: isGlobalFullAccessActive ? 999 : 1,
+        maxShops: isGlobalFullAccessActive ? 999 : 1,
         currentUsersCount: 1,
         currentShopsCount: 1,
         paymentHistory: [],

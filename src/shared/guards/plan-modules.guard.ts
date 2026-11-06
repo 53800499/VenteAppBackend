@@ -165,7 +165,12 @@ export class PlanModulesGuard implements CanActivate {
         if (policyRecord) {
           const gen = policyRecord.general_json;
           const lic = policyRecord.licensing_policy_json;
-          if (gen?.enforceModuleSubscription === false || lic?.enforceModuleSubscription === false) {
+          if (
+            gen?.enforceModuleSubscription === false ||
+            lic?.enforceModuleSubscription === false ||
+            gen?.globalFullAccess === true ||
+            lic?.globalFullAccess === true
+          ) {
             grantedModules = ['ALL_MODULES'];
           }
         }

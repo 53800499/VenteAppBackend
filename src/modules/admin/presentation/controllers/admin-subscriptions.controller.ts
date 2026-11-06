@@ -443,7 +443,16 @@ export class AdminSubscriptionsController {
     const graceUntil = new Date(Date.now() + (days + 7) * 86400000).toISOString();
 
     try {
-      // 1. Activer la boutique et les utilisateurs
+      // 1. Trouver la boutique par id ou par server_id
+      let { data: shop } = await db.from('shops').select('*').eq('id', numericId).maybeSingle();
+      if (!shop) {
+        const { data: shopByServer } = await db.from('shops').select('*').eq('server_id', tenantId).maybeSingle();
+        shop = shopByServer;
+      }
+      const actualNumericId = shop?.id || numericId;
+      const tenantUuid = shop?.server_id;
+
+      // 2. Activer la boutique et les utilisateurs
       await db.from('shops').update({
         is_active: true,
         plan,
@@ -451,35 +460,58 @@ export class AdminSubscriptionsController {
         last_extended_by: adminEmail,
         last_extension_reason: dto.reason || 'Compte activé et validé par le Back-office',
         updated_at: new Date().toISOString(),
-      }).eq('id', numericId);
+      }).eq('id', actualNumericId);
+
+      if (tenantUuid) {
+        await db.from('shops').update({
+          is_active: true,
+          plan,
+          subscription_expires_at: expiresAt,
+        }).eq('server_id', tenantUuid);
+      }
 
       await db.from('users').update({
         is_active: true,
         updated_at: new Date().toISOString(),
-      }).eq('shop_id', numericId);
+      }).eq('shop_id', actualNumericId);
 
-      // 2. Mettre à jour l'abonnement
-      const { data: shop } = await db.from('shops').select('server_id, organization_id').eq('id', numericId).maybeSingle();
-      const tenantUuid = shop?.server_id;
-
+      // 3. Mettre à jour l'abonnement
       if (tenantUuid) {
         const { data: planData } = await db.from('subscription_plans').select('id').eq('code', plan).maybeSingle();
 
-        await db.from('subscriptions').insert({
-          tenant_id: tenantUuid,
-          plan_id: planData?.id,
-          plan_code: plan,
-          status: 'ACTIVE',
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt,
-          grace_until: graceUntil,
-          auto_renew: false,
-        });
+        const { data: existingSubs } = await db
+          .from('subscriptions')
+          .select('id')
+          .eq('tenant_id', tenantUuid);
+
+        if (existingSubs && existingSubs.length > 0) {
+          await db.from('subscriptions').update({
+            status: 'ACTIVE',
+            plan_code: plan,
+            plan_id: planData?.id,
+            expires_at: expiresAt,
+            grace_until: graceUntil,
+            updated_at: new Date().toISOString(),
+          }).eq('tenant_id', tenantUuid);
+        } else {
+          await db.from('subscriptions').insert({
+            tenant_id: tenantUuid,
+            plan_id: planData?.id,
+            plan_code: plan,
+            status: 'ACTIVE',
+            started_at: new Date().toISOString(),
+            expires_at: expiresAt,
+            grace_until: graceUntil,
+            auto_renew: false,
+          });
+        }
       }
 
       if (shop?.organization_id) {
         await db.from('organizations').update({ status: 'ACTIVE' }).eq('id', shop.organization_id);
       }
+
+      PlanModulesGuard.invalidateCache(actualNumericId);
 
       try {
         await db.from('admin_audit_logs').insert({
@@ -488,7 +520,7 @@ export class AdminSubscriptionsController {
           admin_email: adminEmail,
           admin_role: 'SUPER_ADMIN',
           action: 'ACTIVATE_TENANT_ACCOUNT',
-          target: `Entreprise #${numericId}`,
+          target: `Entreprise #${actualNumericId}`,
           reason: dto.reason || 'Activation et validation du compte client',
           result: 'SUCCESS',
         });
@@ -496,24 +528,18 @@ export class AdminSubscriptionsController {
 
       return {
         success: true,
-        tenantId: `tenant-${numericId}`,
+        tenantId: `tenant-${actualNumericId}`,
         status: 'ACTIVE',
         plan,
         expiresAt,
         activatedBy: adminEmail,
         activatedAt: new Date().toISOString(),
-        message: `Compte entreprise #${numericId} validé et activé avec succès.`,
+        message: `Compte entreprise #${actualNumericId} validé et activé avec succès.`,
       };
-    } catch {
+    } catch (err: any) {
       return {
-        success: true,
-        tenantId: `tenant-${numericId}`,
-        status: 'ACTIVE',
-        plan,
-        expiresAt,
-        activatedBy: adminEmail,
-        activatedAt: new Date().toISOString(),
-        message: `Compte entreprise #${numericId} validé et activé avec succès.`,
+        success: false,
+        error: err?.message || 'Erreur lors de l\'activation du compte',
       };
     }
   }
@@ -550,19 +576,36 @@ export class AdminSubscriptionsController {
       licensing.requireAccountValidation = isFullAccessEnabled;
       licensing.globalFullAccess = isFullAccessEnabled;
 
-      await db.from('platform_settings').upsert({
+      const { error: upsertErr } = await db.from('platform_settings').upsert({
         id: 'default',
         general_json: general,
         licensing_policy_json: licensing,
         updated_at: new Date().toISOString(),
       });
 
-      // 2. Si activation du grand accès pour tout le monde : s'assurer que les entreprises existantes déjà validées soient en statut ACTIVE
+      if (upsertErr) {
+        throw new Error(`Erreur platform_settings: ${upsertErr.message}`);
+      }
+
+      // 2. Si activation du plein accès pour tout le monde : activer immédiatement TOUTES les entreprises en attente
       if (isFullAccessEnabled) {
+        // Activer toutes les boutiques
         await db.from('shops').update({
           is_active: true,
           updated_at: new Date().toISOString(),
-        }).eq('is_active', true); // Ne pas réactiver les boutiques expressément suspendues/bannies par l'admin
+        }).neq('is_active', true);
+
+        // Activer tous les utilisateurs
+        await db.from('users').update({
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }).neq('is_active', true);
+
+        // Mettre à jour toutes les souscriptions en attente vers ACTIVE
+        await db.from('subscriptions').update({
+          status: 'ACTIVE',
+          updated_at: new Date().toISOString(),
+        }).eq('status', 'PENDING_ACTIVATION');
       }
 
       // Vider le cache des guards de modules
