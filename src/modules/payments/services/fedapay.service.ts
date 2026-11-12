@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as https from 'https';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../../infrastructure/supabase/supabase.service';
@@ -79,18 +80,53 @@ export class FedaPayService {
 
   private async fedapayFetch(
     path: string,
-    init: RequestInit = {},
-  ): Promise<{ res: Response; data: any }> {
-    const url = `${this.baseUrl}${path}`;
+    init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ): Promise<{ res: { ok: boolean; status: number }; data: any }> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    const bodyStr = init.body;
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'User-Agent': 'VenteApp-Backend/1.0',
+      'User-Agent': 'FedaPay/v1 NodeBindings/1.0',
       Authorization: `Bearer ${this.secretKey}`,
-      ...((init.headers as Record<string, string>) || {}),
+      ...(init.headers || {}),
+      ...(bodyStr !== undefined
+        ? { 'Content-Length': String(Buffer.byteLength(bodyStr, 'utf8')) }
+        : {}),
     };
 
-    const res = await fetch(url, { ...init, headers });
-    const rawText = await res.text();
+    const { statusCode, rawText } = await new Promise<{
+      statusCode: number;
+      rawText: string;
+    }>((resolve, reject) => {
+      const req = https.request(
+        url,
+        {
+          method: init.method || 'GET',
+          headers,
+          timeout: 20000,
+        },
+        (response) => {
+          let chunks = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk) => {
+            chunks += chunk;
+          });
+          response.on('end', () => {
+            resolve({ statusCode: response.statusCode || 500, rawText: chunks });
+          });
+        },
+      );
+      req.on('timeout', () => {
+        req.destroy(new Error('Délai d’attente dépassé lors de la connexion à FedaPay'));
+      });
+      req.on('error', reject);
+      if (bodyStr !== undefined) {
+        req.write(bodyStr);
+      }
+      req.end();
+    });
+
+    const res = { ok: statusCode >= 200 && statusCode < 300, status: statusCode };
     const trimmed = rawText.trim();
 
     if (!trimmed) {
@@ -99,10 +135,10 @@ export class FedaPayService {
 
     if (trimmed.startsWith('<')) {
       this.logger.error(
-        `FedaPay a renvoyé du HTML (HTTP ${res.status}) sur ${path}: ${trimmed.slice(0, 200)}`,
+        `FedaPay a renvoyé du HTML (HTTP ${statusCode}) sur ${path}: ${trimmed.slice(0, 200)}`,
       );
       throw new Error(
-        `FedaPay a renvoyé une page HTML (HTTP ${res.status}) au lieu de JSON. Vérifiez la clé/environnement FedaPay ou un blocage Cloudflare.`,
+        `FedaPay a renvoyé une page HTML (HTTP ${statusCode}) au lieu de JSON. Vérifiez la clé/environnement FedaPay ou un blocage Cloudflare.`,
       );
     }
 
@@ -110,9 +146,9 @@ export class FedaPayService {
       return { res, data: JSON.parse(trimmed) };
     } catch {
       this.logger.error(
-        `Réponse non-JSON de FedaPay (HTTP ${res.status}) sur ${path}: ${trimmed.slice(0, 200)}`,
+        `Réponse non-JSON de FedaPay (HTTP ${statusCode}) sur ${path}: ${trimmed.slice(0, 200)}`,
       );
-      throw new Error(`Réponse invalide de FedaPay (HTTP ${res.status})`);
+      throw new Error(`Réponse invalide de FedaPay (HTTP ${statusCode})`);
     }
   }
 
