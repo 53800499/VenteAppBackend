@@ -77,6 +77,45 @@ export class FedaPayService {
     };
   }
 
+  private async fedapayFetch(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<{ res: Response; data: any }> {
+    const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'VenteApp-Backend/1.0',
+      Authorization: `Bearer ${this.secretKey}`,
+      ...((init.headers as Record<string, string>) || {}),
+    };
+
+    const res = await fetch(url, { ...init, headers });
+    const rawText = await res.text();
+    const trimmed = rawText.trim();
+
+    if (!trimmed) {
+      return { res, data: {} };
+    }
+
+    if (trimmed.startsWith('<')) {
+      this.logger.error(
+        `FedaPay a renvoyé du HTML (HTTP ${res.status}) sur ${path}: ${trimmed.slice(0, 200)}`,
+      );
+      throw new Error(
+        `FedaPay a renvoyé une page HTML (HTTP ${res.status}) au lieu de JSON. Vérifiez la clé/environnement FedaPay ou un blocage Cloudflare.`,
+      );
+    }
+
+    try {
+      return { res, data: JSON.parse(trimmed) };
+    } catch {
+      this.logger.error(
+        `Réponse non-JSON de FedaPay (HTTP ${res.status}) sur ${path}: ${trimmed.slice(0, 200)}`,
+      );
+      throw new Error(`Réponse invalide de FedaPay (HTTP ${res.status})`);
+    }
+  }
+
   /**
    * Créer une transaction FedaPay
    */
@@ -88,8 +127,6 @@ export class FedaPayService {
         message: 'Clé FedaPay non configurée sur le serveur. Veuillez renseigner FEDAPAY_SECRET_KEY dans le fichier .env.',
       };
     }
-
-    const url = `${this.baseUrl}/transactions`;
 
     let phoneObj: any = undefined;
     if (dto.phoneNumber) {
@@ -108,7 +145,7 @@ export class FedaPayService {
       }
     }
 
-    const callbackUrl = dto.callbackUrl || this.configService.get<string>('FEDAPAY_CALLBACK_URL');
+    const callbackUrl = dto.callbackUrl || this.getEnv('FEDAPAY_CALLBACK_URL');
 
     const payload: Record<string, any> = {
       amount: Math.round(dto.amount),
@@ -130,16 +167,11 @@ export class FedaPayService {
     };
 
     try {
-      const res = await fetch(url, {
+      const { res, data } = await this.fedapayFetch('/transactions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.secretKey}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json();
       if (!res.ok) {
         this.logger.error(`FedaPay error: ${JSON.stringify(data)}`);
         const msg = data.message || 'Erreur FedaPay';
@@ -184,20 +216,15 @@ export class FedaPayService {
    * Générer le token de paiement FedaPay
    */
   private async generateToken(transactionId: number, mode?: string) {
-    const url = `${this.baseUrl}/transactions/${transactionId}/token`;
     const body: any = {};
     if (mode) body.mode = mode;
 
-    const res = await fetch(url, {
+    const { res, data } = await this.fedapayFetch(`/transactions/${transactionId}/token`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.secretKey}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
     if (!res.ok) {
       this.logger.error(`FedaPay generateToken error: ${JSON.stringify(data)}`);
       throw new Error(data.message || 'Erreur lors de la génération du token FedaPay');
@@ -214,15 +241,10 @@ export class FedaPayService {
    */
   async checkStatus(transactionId: number) {
     try {
-      const url = `${this.baseUrl}/transactions/${transactionId}`;
-      const res = await fetch(url, {
+      const { res, data } = await this.fedapayFetch(`/transactions/${transactionId}`, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.secretKey}`,
-        },
       });
 
-      const data = await res.json();
       if (!res.ok) {
         return {
           success: false,
@@ -281,7 +303,7 @@ export class FedaPayService {
    * Vérifie la signature HMAC FedaPay si présente et si FEDAPAY_WEBHOOK_SECRET est configuré.
    */
   private verifyWebhookSignature(body: any, headers?: Record<string, string>): boolean {
-    const webhookSecret = this.configService.get<string>('FEDAPAY_WEBHOOK_SECRET') || '';
+    const webhookSecret = this.getEnv('FEDAPAY_WEBHOOK_SECRET');
     if (!webhookSecret || webhookSecret.includes('changez_moi')) {
       return true;
     }
