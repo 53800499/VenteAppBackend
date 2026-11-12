@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 import { TransformResponseInterceptor } from '../../shared/interceptors/transform-response.interceptor';
 import { TenantDatabaseService } from '../tenants/tenant-database.service';
 import { PlanModulesGuard } from '../../shared/guards/plan-modules.guard';
@@ -7,24 +8,51 @@ import { CheckoutSessionService, PLAN_PRICES_SERVER } from './checkout-session.s
 import { FedaPayService } from '../payments/services/fedapay.service';
 
 export class MerchantSubscribeDto {
+  @IsIn(['FREE', 'ESSENTIEL', 'PRO', 'BUSINESS', 'ENTERPRISE'])
   planCode!: 'FREE' | 'ESSENTIEL' | 'PRO' | 'BUSINESS' | 'ENTERPRISE';
+
+  @IsOptional()
+  @IsNumber()
   durationDays?: number;
+
+  @IsOptional()
+  @IsString()
   provider?: string;
+
+  @IsOptional()
+  @IsString()
   paymentReference?: string;
+
+  @IsOptional()
+  @IsNumber()
   amount?: number;
 }
 
 export class PortalCreateSessionDto {
+  @IsIn(['ESSENTIEL', 'PRO', 'BUSINESS'])
   planCode!: 'ESSENTIEL' | 'PRO' | 'BUSINESS';
+
+  @IsOptional()
+  @IsNumber()
   durationDays?: number;
+
+  @IsString()
   customerName!: string;
+
+  @IsString()
   customerPhone!: string;
+
+  @IsOptional()
+  @IsString()
   customerEmail?: string;
   // tenantId NEVER accepted from client — always resolved from JWT
 }
 
 export class CreatePortalSessionDto {
+  @IsString()
   tenantId!: string;
+
+  @IsNumber()
   shopId!: number;
 }
 

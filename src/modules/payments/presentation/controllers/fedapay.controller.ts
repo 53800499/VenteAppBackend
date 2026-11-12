@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { CurrentAuth } from '../../../../shared/decorators/current-auth.decorator';
 import { SessionGuard } from '../../../../shared/guards/session.guard';
 import type { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
@@ -18,12 +19,31 @@ import { TenantGuard } from '../../../tenants/tenant.guard';
 import { FedaPayService } from '../../services/fedapay.service';
 
 export class InitializeFedaPayDto {
+  @IsNumber()
+  @Min(100)
   amount: number;
+
+  @IsString()
   description: string;
+
+  @IsOptional()
+  @IsString()
   phoneNumber?: string;
+
+  @IsOptional()
+  @IsString()
   mode?: string; // 'mtn', 'moov', 'celtiis', 'card'
+
+  @IsOptional()
+  @IsString()
   planCode?: string;
+
+  @IsOptional()
+  @IsNumber()
   durationDays?: number;
+
+  @IsOptional()
+  @IsString()
   addonCode?: string;
 }
 
