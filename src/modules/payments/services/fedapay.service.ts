@@ -26,12 +26,17 @@ export class FedaPayService {
     private readonly supabase: SupabaseService,
   ) {}
 
+  private getEnv(key: string): string {
+    const raw = this.configService.get<string>(key) ?? process.env[key] ?? '';
+    return raw.trim().replace(/^["']|["']$/g, '').trim();
+  }
+
   private get secretKey(): string {
-    return this.configService.get<string>('FEDAPAY_SECRET_KEY') || '';
+    return this.getEnv('FEDAPAY_SECRET_KEY');
   }
 
   private get environment(): string {
-    const env = this.configService.get<string>('FEDAPAY_ENVIRONMENT');
+    const env = this.getEnv('FEDAPAY_ENVIRONMENT');
     if (env) return env.toLowerCase();
     if (this.secretKey.startsWith('sk_sandbox_')) return 'sandbox';
     if (this.secretKey.startsWith('sk_live_')) return 'live';
@@ -45,6 +50,31 @@ export class FedaPayService {
     return this.environment === 'live'
       ? 'https://api.fedapay.com/v1'
       : 'https://sandbox-api.fedapay.com/v1';
+  }
+
+  getHealthStatus() {
+    const key = this.secretKey;
+    let keyType = 'missing';
+    if (key.includes('changez_moi')) {
+      keyType = 'placeholder';
+    } else if (key.startsWith('sk_live_')) {
+      keyType = 'sk_live';
+    } else if (key.startsWith('sk_sandbox_')) {
+      keyType = 'sk_sandbox';
+    } else if (key.startsWith('pk_')) {
+      keyType = 'pk_wrong_key';
+    } else if (key.length > 0) {
+      keyType = 'unknown_format';
+    }
+
+    return {
+      configured: Boolean(key) && !key.includes('changez_moi') && key.startsWith('sk_'),
+      environment: this.environment,
+      baseUrl: this.baseUrl,
+      keyType,
+      hasWebhookSecret: Boolean(this.getEnv('FEDAPAY_WEBHOOK_SECRET')),
+      hasCallbackUrl: Boolean(this.getEnv('FEDAPAY_CALLBACK_URL')),
+    };
   }
 
   /**

@@ -52,6 +52,12 @@ export class InitializeFedaPayDto {
 export class FedaPayController {
   constructor(private readonly fedapayService: FedaPayService) {}
 
+  @Get('health')
+  @ApiOperation({ summary: 'Vérifier si la configuration FedaPay est chargée sur le serveur' })
+  health() {
+    return this.fedapayService.getHealthStatus();
+  }
+
   @Post('initialize')
   @UseGuards(SessionGuard, TenantGuard)
   @ApiSecurity('bearer')
