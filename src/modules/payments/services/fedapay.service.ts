@@ -315,17 +315,7 @@ export class FedaPayService {
       }
 
       const tx = data['v1/transaction'] || data.v1?.transaction || data.transaction || data;
-      let status = tx.status;
-
-      // Auto-approbation UNIQUEMENT en mode Sandbox explicite avec clé sk_sandbox_
-      if (
-        this.environment === 'sandbox' &&
-        this.secretKey.startsWith('sk_sandbox_') &&
-        status === 'pending'
-      ) {
-        status = 'approved';
-        tx.status = 'approved';
-      }
+      const status = tx.status;
 
       if (status === 'approved' || status === 'transferred') {
         let metadata = tx.custom_metadata || tx.metadata || {};
