@@ -543,8 +543,11 @@ export class FedaPayService {
         existingSub?.status !== 'REVOKED' &&
         existingSub?.status !== 'SUSPENDED';
 
-      const currentPlan = (existingSub?.plan_code || 'FREE').toUpperCase();
-      const requestedPlan = (planCode || existingSub?.plan_code || 'ESSENTIEL').toUpperCase();
+      const currentPlan = (existingSub?.plan_code || (shop as any)?.plan || 'FREE').toUpperCase();
+      const isAddonPurchase = Boolean(addonCode && !planCode);
+      const requestedPlan = isAddonPurchase
+        ? currentPlan
+        : (planCode || existingSub?.plan_code || (shop as any)?.plan || 'ESSENTIEL').toUpperCase();
 
       // 3. Charger le tarif officiel du plan demandé et vérifier devise + montant
       const { data: planData } = await db
@@ -556,37 +559,41 @@ export class FedaPayService {
       const txCurrency = entity?.currency?.iso || entity?.currency_iso;
       if (txCurrency && String(txCurrency).toUpperCase() !== 'XOF') {
         this.logger.warn(`Transaction FedaPay ${txId} rejetée : devise invalide (${txCurrency})`);
-        return;
+        throw new Error(`Devise invalide (${txCurrency})`);
       }
 
       const paidAmount = entity?.amount ? Number(entity.amount) : null;
-      const monthlyPrice = Number(planData?.price_monthly) || 0;
-      const yearlyPrice = Number(planData?.price_yearly) || monthlyPrice * 10;
-      const expectedMinAmount =
-        durationDays >= 360
-          ? yearlyPrice
-          : durationDays >= 90
-            ? monthlyPrice * 3
-            : monthlyPrice;
+      if (!isAddonPurchase) {
+        const monthlyPrice = Number(planData?.price_monthly) || 0;
+        const yearlyPrice = Number(planData?.price_yearly) || monthlyPrice * 10;
+        const expectedMinAmount =
+          durationDays >= 360
+            ? yearlyPrice
+            : durationDays >= 90
+              ? monthlyPrice * 3
+              : monthlyPrice;
 
-      if (paidAmount !== null && expectedMinAmount > 0 && paidAmount < expectedMinAmount) {
-        this.logger.warn(
-          `Transaction FedaPay ${txId} rejetée : montant payé (${paidAmount}) inférieur au tarif attendu (${expectedMinAmount}) pour ${requestedPlan}`,
-        );
-        return;
+        if (paidAmount !== null && expectedMinAmount > 0 && paidAmount < expectedMinAmount) {
+          this.logger.warn(
+            `Transaction FedaPay ${txId} rejetée : montant payé (${paidAmount}) inférieur au tarif attendu (${expectedMinAmount}) pour ${requestedPlan}`,
+          );
+          throw new Error(`Montant payé (${paidAmount} FCFA) inférieur au tarif du forfait (${expectedMinAmount} FCFA).`);
+        }
       }
 
       const oldMonthlyPrice = Number(existingSub?.subscription_plans?.price_monthly) || 0;
-      let transitionType: 'NEW_SUBSCRIPTION' | 'RENEWAL' | 'UPGRADE' | 'DOWNGRADE_SCHEDULED' = 'NEW_SUBSCRIPTION';
+      const monthlyPriceForCompare = Number(planData?.price_monthly) || 0;
+      let transitionType: 'NEW_SUBSCRIPTION' | 'RENEWAL' | 'UPGRADE' | 'DOWNGRADE_SCHEDULED' | 'ADDON' =
+        isAddonPurchase ? 'ADDON' : 'NEW_SUBSCRIPTION';
       let appliedPlan = requestedPlan;
       let scheduledPlanCode: string | null = null;
       let scheduledDurationDays: number | null = null;
       let scheduledEffectiveAt: string | null = null;
 
-      if (hasActivePaidPeriod) {
+      if (!isAddonPurchase && hasActivePaidPeriod) {
         if (currentPlan === requestedPlan) {
           transitionType = 'RENEWAL';
-        } else if (monthlyPrice >= oldMonthlyPrice) {
+        } else if (monthlyPriceForCompare >= oldMonthlyPrice) {
           // Upgrade immédiat + cumul des jours restants
           transitionType = 'UPGRADE';
         } else {
@@ -600,7 +607,9 @@ export class FedaPayService {
       }
 
       const baseTime = hasActivePaidPeriod ? currentExpires : nowMs;
-      const expiresAt = new Date(baseTime + durationDays * 86400000);
+      const expiresAt = isAddonPurchase
+        ? new Date(hasActivePaidPeriod ? currentExpires : nowMs + durationDays * 86400000)
+        : new Date(baseTime + durationDays * 86400000);
       const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
 
       const { data: appliedPlanData } =
@@ -615,7 +624,7 @@ export class FedaPayService {
         status: 'ACTIVE',
         amount: paidAmount ?? (Number(planData?.price_monthly) || 0),
         currency: 'FCFA',
-        payment_method: 'FedaPay',
+        payment_method: isAddonPurchase ? `FedaPay (Option: ${addonCode})` : 'FedaPay',
         payment_reference: paymentReference,
         started_at: now.toISOString(),
         expires_at: expiresAt.toISOString(),
@@ -668,6 +677,7 @@ export class FedaPayService {
       );
     } catch (err: any) {
       this.logger.error(`Échec applySubscriptionUpgrade FedaPay pour shop ${shopId}: ${err.message}`);
+      throw err;
     } finally {
       if (txId) {
         this.processingTxIds.delete(txId);
