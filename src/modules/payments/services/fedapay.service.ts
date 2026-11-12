@@ -404,6 +404,16 @@ export class FedaPayService {
 
       this.logger.log(`FedaPay Webhook reçu: event=${event}, txId=${txId}, status=${rawStatus}`);
 
+      try {
+        await this.supabase.db.from('fedapay_webhook_events').insert({
+          tx_id: txId,
+          event_name: String(event || ''),
+          status: String(rawStatus || ''),
+          payload: body,
+          processed: false,
+        });
+      } catch (_) {}
+
       if (
         rawStatus === 'approved' ||
         rawStatus === 'transferred' ||
@@ -514,36 +524,94 @@ export class FedaPayService {
         return;
       }
 
-      // 2. Vérifier la souscription existante pour cumul des jours restants
+      // 2. Vérifier la souscription existante pour distinction Renouvellement / Upgrade / Downgrade
       const { data: existingSub } = await db
         .from('subscriptions')
-        .select('*')
+        .select('*, subscription_plans(*)')
         .eq('tenant_id', tenantUuid)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
+      const nowMs = now.getTime();
       const currentExpires = existingSub?.expires_at
         ? new Date(existingSub.expires_at).getTime()
-        : now.getTime();
-      const baseTime = currentExpires > now.getTime() ? currentExpires : now.getTime();
+        : 0;
+      const hasActivePaidPeriod =
+        currentExpires > nowMs &&
+        (existingSub?.plan_code || 'FREE').toUpperCase() !== 'FREE' &&
+        existingSub?.status !== 'REVOKED' &&
+        existingSub?.status !== 'SUSPENDED';
+
+      const currentPlan = (existingSub?.plan_code || 'FREE').toUpperCase();
+      const requestedPlan = (planCode || existingSub?.plan_code || 'ESSENTIEL').toUpperCase();
+
+      // 3. Charger le tarif officiel du plan demandé et vérifier devise + montant
+      const { data: planData } = await db
+        .from('subscription_plans')
+        .select('id, code, name, price_monthly, price_yearly')
+        .eq('code', requestedPlan)
+        .maybeSingle();
+
+      const txCurrency = entity?.currency?.iso || entity?.currency_iso;
+      if (txCurrency && String(txCurrency).toUpperCase() !== 'XOF') {
+        this.logger.warn(`Transaction FedaPay ${txId} rejetée : devise invalide (${txCurrency})`);
+        return;
+      }
+
+      const paidAmount = entity?.amount ? Number(entity.amount) : null;
+      const monthlyPrice = Number(planData?.price_monthly) || 0;
+      const yearlyPrice = Number(planData?.price_yearly) || monthlyPrice * 10;
+      const expectedMinAmount =
+        durationDays >= 360
+          ? yearlyPrice
+          : durationDays >= 90
+            ? monthlyPrice * 3
+            : monthlyPrice;
+
+      if (paidAmount !== null && expectedMinAmount > 0 && paidAmount < expectedMinAmount) {
+        this.logger.warn(
+          `Transaction FedaPay ${txId} rejetée : montant payé (${paidAmount}) inférieur au tarif attendu (${expectedMinAmount}) pour ${requestedPlan}`,
+        );
+        return;
+      }
+
+      const oldMonthlyPrice = Number(existingSub?.subscription_plans?.price_monthly) || 0;
+      let transitionType: 'NEW_SUBSCRIPTION' | 'RENEWAL' | 'UPGRADE' | 'DOWNGRADE_SCHEDULED' = 'NEW_SUBSCRIPTION';
+      let appliedPlan = requestedPlan;
+      let scheduledPlanCode: string | null = null;
+      let scheduledDurationDays: number | null = null;
+      let scheduledEffectiveAt: string | null = null;
+
+      if (hasActivePaidPeriod) {
+        if (currentPlan === requestedPlan) {
+          transitionType = 'RENEWAL';
+        } else if (monthlyPrice >= oldMonthlyPrice) {
+          // Upgrade immédiat + cumul des jours restants
+          transitionType = 'UPGRADE';
+        } else {
+          // Downgrade programmé : le forfait actuel reste actif jusqu'à sa date d'expiration
+          transitionType = 'DOWNGRADE_SCHEDULED';
+          appliedPlan = currentPlan;
+          scheduledPlanCode = requestedPlan;
+          scheduledDurationDays = durationDays;
+          scheduledEffectiveAt = new Date(currentExpires).toISOString();
+        }
+      }
+
+      const baseTime = hasActivePaidPeriod ? currentExpires : nowMs;
       const expiresAt = new Date(baseTime + durationDays * 86400000);
       const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
 
-      const targetPlan = planCode || existingSub?.plan_code || 'ESSENTIEL';
-      const paidAmount = entity?.amount ? Number(entity.amount) : null;
+      const { data: appliedPlanData } =
+        appliedPlan === requestedPlan
+          ? { data: planData }
+          : await db.from('subscription_plans').select('id, price_monthly').eq('code', appliedPlan).maybeSingle();
 
-      // 3. Enregistrer l'abonnement actif dans la table `subscriptions`
-      const { data: planData } = await db
-        .from('subscription_plans')
-        .select('id, price_monthly')
-        .eq('code', targetPlan)
-        .maybeSingle();
-
-      await db.from('subscriptions').insert({
+      const insertPayload: Record<string, any> = {
         tenant_id: tenantUuid,
-        plan_id: planData?.id,
-        plan_code: targetPlan,
+        plan_id: appliedPlanData?.id ?? planData?.id,
+        plan_code: appliedPlan,
         status: 'ACTIVE',
         amount: paidAmount ?? (Number(planData?.price_monthly) || 0),
         currency: 'FCFA',
@@ -553,13 +621,41 @@ export class FedaPayService {
         expires_at: expiresAt.toISOString(),
         grace_until: graceUntil.toISOString(),
         auto_renew: false,
-      });
+      };
 
-      // 4. Mettre à jour la boutique et invalider le cache du guard immédiatement
+      if (scheduledPlanCode) {
+        insertPayload.scheduled_plan_code = scheduledPlanCode;
+        insertPayload.scheduled_duration_days = scheduledDurationDays;
+        insertPayload.scheduled_effective_at = scheduledEffectiveAt;
+      }
+
+      const { error: insertError } = await db.from('subscriptions').insert(insertPayload);
+      if (insertError) {
+        if (insertError.code === '23505') {
+          this.logger.log(`Transaction FedaPay ${txId} déjà insérée (contrainte UNIQUE) — idempotence garantie`);
+          return;
+        }
+        throw new Error(insertError.message);
+      }
+
+      try {
+        await db.from('subscription_transitions').insert({
+          tenant_id: tenantUuid,
+          shop_id: shopId,
+          from_plan: currentPlan,
+          to_plan: requestedPlan,
+          transition_type: transitionType,
+          effective_at: scheduledEffectiveAt || now.toISOString(),
+          payment_reference: paymentReference,
+          reason: `FedaPay ${transitionType} (${durationDays}j)`,
+        });
+      } catch (_) {}
+
+      // 4. Synchroniser la projection `shops.plan` depuis la source de vérité `subscriptions`
       await db
         .from('shops')
         .update({
-          plan: targetPlan,
+          plan: appliedPlan,
           is_active: true,
           subscription_expires_at: expiresAt.toISOString(),
         })
@@ -568,7 +664,7 @@ export class FedaPayService {
       PlanModulesGuard.invalidateCache(shopId);
 
       this.logger.log(
-        `Shop ${shopId} (tenant: ${tenantUuid}) abonnement activé via FedaPay (${paymentReference}): plan=${targetPlan}, expire=${expiresAt.toISOString()}`,
+        `Shop ${shopId} (tenant: ${tenantUuid}) ${transitionType} via FedaPay (${paymentReference}): plan=${appliedPlan}, scheduled=${scheduledPlanCode ?? 'none'}, expire=${expiresAt.toISOString()}`,
       );
     } catch (err: any) {
       this.logger.error(`Échec applySubscriptionUpgrade FedaPay pour shop ${shopId}: ${err.message}`);

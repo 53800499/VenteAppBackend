@@ -232,7 +232,9 @@ export class SubscriptionsController {
         : (typeof shop?.created_at === 'number' ? new Date(shop.created_at) : new Date());
 
       const now = Date.now();
+      const isHardRevoked = sub?.status === 'EXPIRED' || sub?.status === 'REVOKED' || sub?.status === 'SUSPENDED';
       const isExpired = sub ? (now > graceUntil.getTime()) : false;
+      const isInGrace = Boolean(sub && !isHardRevoked && !isExpired && now > expiresAt.getTime() && now <= graceUntil.getTime());
 
       let planCode = sub?.plan_code || shop?.plan || 'FREE';
       let computedStatus = sub?.status || (expiresAt.getTime() > now ? 'ACTIVE' : (graceUntil.getTime() > now ? 'GRACE' : 'EXPIRED'));
@@ -240,8 +242,10 @@ export class SubscriptionsController {
       // Si le compte ou la souscription est en attente de validation back-office
       if (sub?.status === 'PENDING_ACTIVATION' || shop?.is_active === false) {
         computedStatus = 'PENDING_ACTIVATION';
-      } else if (isExpired || computedStatus === 'EXPIRED') {
-        // Rétrogradation douce en forfait permanent GRATUIT si expiré
+      } else if (isInGrace) {
+        computedStatus = 'GRACE';
+      } else if (isExpired || isHardRevoked) {
+        // Rétrogradation douce en forfait permanent GRATUIT si expiré au-delà de la grâce
         planCode = 'FREE';
         computedStatus = 'ACTIVE';
       }
@@ -289,8 +293,17 @@ export class SubscriptionsController {
 
       const rawGrantedModules = planData?.granted_modules || defaultModulesMap[planCode] || defaultModulesMap.FREE;
       // Si la contrainte de module liée aux abonnements est désactivée par le back-office, débloquer ALL_MODULES
-      const grantedModules = enforceModuleSubscription ? rawGrantedModules : ['ALL_MODULES'];
-      const capabilities = planData?.capabilities || defaultCapabilitiesMap[planCode] || defaultCapabilitiesMap.FREE;
+      // En période de grâce (GRACE), restreindre les modules payants avancés et le Cloud Sync
+      const grantedModules = !enforceModuleSubscription
+        ? ['ALL_MODULES']
+        : computedStatus === 'GRACE'
+          ? ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'REPORTS_BASIC']
+          : rawGrantedModules;
+      const capabilities = !enforceModuleSubscription
+        ? ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT']
+        : computedStatus === 'GRACE'
+          ? []
+          : (planData?.capabilities || defaultCapabilitiesMap[planCode] || defaultCapabilitiesMap.FREE);
       const maxUsers = planData?.max_users || (planCode === 'BUSINESS' ? 30 : (planCode === 'PRO' ? 10 : (planCode === 'ESSENTIEL' ? 3 : 1)));
       const maxShops = planData?.max_shops || (planCode === 'BUSINESS' ? 5 : (planCode === 'PRO' ? 2 : 1));
 
@@ -326,6 +339,12 @@ export class SubscriptionsController {
         maxShops,
         currentUsersCount: currentUsersCount || 1,
         currentShopsCount: 1,
+        scheduledPlanCode: sub?.scheduled_plan_code || null,
+        scheduledEffectiveAt: sub?.scheduled_effective_at || null,
+        daysRemaining: Math.max(0, Math.ceil((expiresAt.getTime() - now) / 86400000)),
+        graceDaysRemaining: computedStatus === 'GRACE'
+          ? Math.max(0, Math.ceil((graceUntil.getTime() - now) / 86400000))
+          : 0,
         paymentHistory,
       };
     } catch {
@@ -390,36 +409,51 @@ export class SubscriptionsController {
 
     let transitionType: 'RENEWAL' | 'UPGRADE' | 'DOWNGRADE' | 'NEW' = 'NEW';
     let bonusDays = 0;
+    let remainingDays = 0;
+    let effectiveMode: 'IMMEDIATE' | 'AT_EXPIRY' = 'IMMEDIATE';
+    let newExpiresAtMs = now + durationDays * 86400000;
     let message = '';
 
     if (existingExpires > now && currentPlanCode !== 'FREE') {
-      const remainingDays = Math.max(0, Math.ceil((existingExpires - now) / 86400000));
+      remainingDays = Math.max(0, Math.ceil((existingExpires - now) / 86400000));
       const oldPrice = Number(currentPlanData?.price_monthly) || 0;
       const newPrice = Number(targetPlanData?.price_monthly) || 0;
+      newExpiresAtMs = existingExpires + durationDays * 86400000;
 
       if (currentPlanCode === targetPlan) {
         transitionType = 'RENEWAL';
-        message = `Renouvellement : votre forfait actuel sera prolongé de ${durationDays} jours supplémentaires.`;
+        effectiveMode = 'IMMEDIATE';
+        message = `Renouvellement : vos ${remainingDays} jours restants sont conservés + ${durationDays} jours ajoutés (total ${remainingDays + durationDays} jours).`;
       } else if (newPrice >= oldPrice) {
         transitionType = 'UPGRADE';
-        const remainingValue = remainingDays * (oldPrice / 30);
-        bonusDays = newPrice > 0 ? Math.floor(remainingValue / (newPrice / 30)) : 0;
-        message = `Mise à niveau immédiate : vos ${remainingDays} jours restants de ${currentPlanData?.name || currentPlanCode} sont convertis en +${bonusDays} jours bonus sur votre nouveau forfait ${targetPlanData?.name || targetPlan} !`;
+        effectiveMode = 'IMMEDIATE';
+        bonusDays = remainingDays;
+        message = `Upgrade immédiat : ${targetPlanData?.name || targetPlan} est activé tout de suite et vos ${remainingDays} jours restants sont cumulés avec les ${durationDays} jours achetés (total ${remainingDays + durationDays} jours).`;
       } else {
         transitionType = 'DOWNGRADE';
-        message = `Rétrogradation : vous conservez vos avantages ${currentPlanData?.name || currentPlanCode} jusqu'à la fin de votre période déjà payée (${remainingDays} jours restants). Le nouveau forfait prendra effet à l'échéance.`;
+        effectiveMode = 'AT_EXPIRY';
+        message = `Downgrade programmé : vous conservez ${currentPlanData?.name || currentPlanCode} pendant vos ${remainingDays} jours restants. ${targetPlanData?.name || targetPlan} prendra effet à l'échéance pour ${durationDays} jours.`;
       }
     } else {
       transitionType = 'NEW';
-      message = `Souscription : activation immédiate du forfait ${targetPlanData?.name || targetPlan} pour ${durationDays} jours.`;
+      effectiveMode = 'IMMEDIATE';
+      message = `Souscription : activation immédiate du forfait ${targetPlanData?.name || targetPlan} pour ${durationDays} jours (+ 7 jours de grâce distincts après expiration).`;
     }
+
+    const newExpiresAt = new Date(newExpiresAtMs);
+    const graceUntil = new Date(newExpiresAtMs + 7 * 86400000);
 
     return {
       currentPlanCode,
       targetPlanCode: targetPlan,
       transitionType,
+      effectiveMode,
+      remainingDays,
       bonusDays,
-      totalGrantedDays: durationDays + bonusDays,
+      totalGrantedDays: remainingDays + durationDays,
+      currentExpiresAt: existingExpires > now ? new Date(existingExpires).toISOString() : null,
+      newExpiresAt: newExpiresAt.toISOString(),
+      graceUntil: graceUntil.toISOString(),
       price: durationDays >= 360 ? Number(targetPlanData?.price_yearly) || 0 : Number(targetPlanData?.price_monthly) || 0,
       currency: 'FCFA',
       message,
@@ -458,6 +492,10 @@ export class SubscriptionsController {
 
         let bonusDays = 0;
         let expiresAt: Date;
+        let appliedPlan = plan;
+        let scheduledPlanCode: string | null = null;
+        let scheduledEffectiveAt: string | null = null;
+        let transitionType = 'NEW_SUBSCRIPTION';
 
         if (currentExpires > now && currentPlanCode !== 'FREE') {
           const remainingDays = Math.max(0, Math.ceil((currentExpires - now) / 86400000));
@@ -466,15 +504,22 @@ export class SubscriptionsController {
 
           if (currentPlanCode === plan) {
             // Renouvellement du même forfait : extension cumulative
+            transitionType = 'RENEWAL';
             expiresAt = new Date(currentExpires + durationDays * 86400000);
-          } else if (newPrice >= oldPrice) {
-            // Upgrade : immédiat avec report de la valeur restante en jours bonus
-            const remainingValue = remainingDays * (oldPrice / 30);
-            bonusDays = newPrice > 0 ? Math.floor(remainingValue / (newPrice / 30)) : 0;
-            expiresAt = new Date(now + (durationDays + bonusDays) * 86400000);
+          } else if (newPrice >= oldPrice && plan !== 'FREE') {
+            // Upgrade : immédiat avec cumul des jours restants
+            transitionType = 'UPGRADE';
+            bonusDays = remainingDays;
+            expiresAt = new Date(currentExpires + durationDays * 86400000);
           } else {
-            // Downgrade : prend effet à la fin de la période en cours
-            expiresAt = new Date(currentExpires + durationDays * 86400000);
+            // Downgrade ou passage en FREE : conserve le forfait actuel jusqu'à son échéance
+            transitionType = plan === 'FREE' ? 'PLAN_CHANGE_FREE' : 'DOWNGRADE_SCHEDULED';
+            appliedPlan = currentPlanCode;
+            scheduledPlanCode = plan;
+            scheduledEffectiveAt = new Date(currentExpires).toISOString();
+            expiresAt = plan === 'FREE'
+              ? new Date(currentExpires)
+              : new Date(currentExpires + durationDays * 86400000);
           }
         } else {
           // Nouveau plan ou compte gratuit
@@ -484,10 +529,10 @@ export class SubscriptionsController {
         const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
         const amount = dto.amount ?? (plan === 'FREE' ? 0 : (durationDays >= 360 ? Number(planData?.price_yearly) || 0 : Number(planData?.price_monthly) || 0));
 
-        await db.from('subscriptions').insert({
+        const subInsert: Record<string, any> = {
           tenant_id: tenantUuid,
-          plan_id: planData?.id,
-          plan_code: plan,
+          plan_id: appliedPlan === plan ? planData?.id : existingSub?.plan_id,
+          plan_code: appliedPlan,
           status: 'ACTIVE',
           amount: amount,
           currency: 'FCFA',
@@ -498,10 +543,31 @@ export class SubscriptionsController {
           expires_at: expiresAt.toISOString(),
           grace_until: graceUntil.toISOString(),
           auto_renew: false,
-        });
+        };
+        if (scheduledPlanCode) {
+          subInsert.scheduled_plan_code = scheduledPlanCode;
+          subInsert.scheduled_duration_days = durationDays;
+          subInsert.scheduled_effective_at = scheduledEffectiveAt;
+        }
 
-        // Mettre à jour le plan direct sur le shop
-        await db.from('shops').update({ plan }).eq('id', shopId);
+        await db.from('subscriptions').insert(subInsert);
+
+        try {
+          await db.from('subscription_transitions').insert({
+            tenant_id: tenantUuid,
+            shop_id: shopId,
+            from_plan: currentPlanCode,
+            to_plan: plan,
+            transition_type: transitionType,
+            bonus_days: bonusDays,
+            effective_at: scheduledEffectiveAt || new Date().toISOString(),
+            payment_reference: subInsert.payment_reference,
+            reason: `Souscription ${transitionType} (${durationDays}j)`,
+          });
+        } catch {}
+
+        // Mettre à jour la projection `shops.plan` depuis la source de vérité `subscriptions`
+        await db.from('shops').update({ plan: appliedPlan }).eq('id', shopId);
       }
     } catch {}
 

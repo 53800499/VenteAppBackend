@@ -122,18 +122,22 @@ export class PlanModulesGuard implements CanActivate {
         }
       }
 
-      // Vérifier si l'abonnement a expiré (y compris la période de grâce de 7 jours par défaut)
+      // Vérifier l'état temporel : période payée (expiresAt) vs période de grâce (graceUntil)
       const expiresAt = sub?.expires_at ? new Date(sub.expires_at).getTime() : 0;
       const graceUntil = sub?.grace_until
         ? new Date(sub.grace_until).getTime()
         : (expiresAt ? expiresAt + 7 * 86400000 : 0);
-      const isExpired = sub ? (now > (graceUntil || expiresAt)) : false;
+      let status = sub?.status || 'ACTIVE';
+      const isHardRevoked = status === 'EXPIRED' || status === 'REVOKED' || status === 'SUSPENDED';
+      const isExpired = Boolean(sub && graceUntil > 0 && now > graceUntil);
+      const isInGrace = Boolean(sub && !isHardRevoked && !isExpired && expiresAt > 0 && now > expiresAt && now <= graceUntil);
 
       let planCode = sub?.plan_code || (shop as any)?.plan || 'FREE';
-      let status = sub?.status || 'ACTIVE';
 
-      // Rétrogradation douce en forfait FREE permanent si expiré au-delà de la grâce ou révoqué
-      if (isExpired || status === 'EXPIRED' || status === 'REVOKED' || status === 'SUSPENDED') {
+      if (isInGrace) {
+        status = 'GRACE';
+      } else if (isExpired || isHardRevoked) {
+        // Rétrogradation douce en forfait FREE permanent si expiré au-delà de la grâce ou révoqué
         planCode = 'FREE';
         status = 'FALLBACK_FREE';
       }
@@ -178,13 +182,18 @@ export class PlanModulesGuard implements CanActivate {
         }
       } catch {}
 
-      // S'assurer que SALES_ORDERS (Commandes clients) est garanti pour les forfaits PRO, BUSINESS, ENTERPRISE
-      if (enforceModuleSubscription && ['PRO', 'BUSINESS', 'ENTERPRISE'].includes(planCode) && !grantedModules.includes('SALES_ORDERS') && !grantedModules.includes('ALL_MODULES')) {
+      // Pendant la période de grâce (7 jours après expiration), restreindre les modules payants avancés
+      // pour que la grâce ne devienne jamais une prolongation commerciale implicite.
+      if (enforceModuleSubscription && status === 'GRACE') {
+        grantedModules = ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'REPORTS_BASIC'];
+      } else if (enforceModuleSubscription && ['PRO', 'BUSINESS', 'ENTERPRISE'].includes(planCode) && !grantedModules.includes('SALES_ORDERS') && !grantedModules.includes('ALL_MODULES')) {
         grantedModules = [...grantedModules, 'SALES_ORDERS'];
       }
-      const capabilities = enforceModuleSubscription
-        ? (planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE)
-        : ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT'];
+      const capabilities = !enforceModuleSubscription
+        ? ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT']
+        : status === 'GRACE'
+          ? []
+          : (planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE);
 
       const result = {
         planCode,
@@ -197,15 +206,14 @@ export class PlanModulesGuard implements CanActivate {
       PlanModulesGuard.planCache.set(shopId, result);
       return result;
     } catch {
-      // Fallback résilient en cas de déconnexion de la BDD
-      const fallback = {
-        planCode: 'PRO',
+      // Sécurité : en cas d'erreur BDD, ne JAMAIS accorder PRO par défaut
+      return {
+        planCode: 'FREE',
         status: 'OFFLINE_FALLBACK',
-        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC', 'SALES_ORDERS', 'REPORTS_ADVANCED', 'AUDIT_LOG'],
-        capabilities: ['CLOUD_SYNC'],
+        grantedModules: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
+        capabilities: [],
         cachedUntil: now + 5000,
       };
-      return fallback;
     }
   }
 
