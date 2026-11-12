@@ -183,6 +183,31 @@ export class FedaPayService {
 
     const callbackUrl = dto.callbackUrl || this.getEnv('FEDAPAY_CALLBACK_URL');
 
+    let customerFirstname = 'Boutique';
+    let customerLastname = `#${dto.shopId}`;
+    let customerEmail = `shop_${dto.shopId}@arike.app`;
+    try {
+      const { data: shop } = await this.supabase.db
+        .from('shops')
+        .select('name, email')
+        .eq('id', dto.shopId)
+        .maybeSingle();
+      const rawName = typeof shop?.name === 'string' ? shop.name.trim() : '';
+      if (rawName) {
+        const parts = rawName.split(/\s+/);
+        if (parts.length >= 2) {
+          customerFirstname = parts[0];
+          customerLastname = parts.slice(1).join(' ');
+        } else {
+          customerFirstname = rawName;
+          customerLastname = 'Boutique';
+        }
+      }
+      if (typeof shop?.email === 'string' && shop.email.includes('@')) {
+        customerEmail = shop.email.trim();
+      }
+    } catch (_) {}
+
     const payload: Record<string, any> = {
       amount: Math.round(dto.amount),
       currency: { iso: 'XOF' },
@@ -195,9 +220,9 @@ export class FedaPayService {
         addon_code: dto.addonCode,
       },
       customer: {
-        firstname: 'Boutique',
-        lastname: `#${dto.shopId}`,
-        email: `shop_${dto.shopId}@arike.app`,
+        firstname: customerFirstname,
+        lastname: customerLastname,
+        email: customerEmail,
         ...(phoneObj ? { phone_number: phoneObj } : {}),
       },
     };
