@@ -15,6 +15,8 @@ export interface CreateFedaPayTransactionDto {
   durationDays?: number;
   addonCode?: string;
   callbackUrl?: string;
+  customerName?: string;
+  customerEmail?: string;
 }
 
 @Injectable()
@@ -183,30 +185,64 @@ export class FedaPayService {
 
     const callbackUrl = dto.callbackUrl || this.getEnv('FEDAPAY_CALLBACK_URL');
 
-    let customerFirstname = 'Boutique';
-    let customerLastname = `#${dto.shopId}`;
-    let customerEmail = `shop_${dto.shopId}@arike.app`;
+    let customerFirstname = 'Entreprise';
+    let customerLastname = `Boutique #${dto.shopId}`;
+    let customerEmail = dto.customerEmail?.trim() || '';
+
     try {
-      const { data: shop } = await this.supabase.db
+      const { data: shop, error: shopErr } = await this.supabase.db
         .from('shops')
-        .select('name, email')
+        .select('id, name, phone, owner_user_id')
         .eq('id', dto.shopId)
         .maybeSingle();
-      const rawName = typeof shop?.name === 'string' ? shop.name.trim() : '';
-      if (rawName) {
-        const parts = rawName.split(/\s+/);
+
+      if (shopErr) {
+        this.logger.warn(`Impossible de charger le shop #${dto.shopId}: ${shopErr.message}`);
+      }
+
+      let ownerName = '';
+      if (shop?.owner_user_id) {
+        const { data: owner } = await this.supabase.db
+          .from('users')
+          .select('name')
+          .eq('id', shop.owner_user_id)
+          .maybeSingle();
+        if (owner?.name) {
+          ownerName = String(owner.name).trim();
+        }
+      }
+
+      const rawShopName =
+        (dto.customerName && dto.customerName.trim()) ||
+        (shop?.name && String(shop.name).trim()) ||
+        '';
+
+      if (rawShopName) {
+        const parts = rawShopName.split(/\s+/);
         if (parts.length >= 2) {
           customerFirstname = parts[0];
           customerLastname = parts.slice(1).join(' ');
         } else {
-          customerFirstname = rawName;
-          customerLastname = 'Boutique';
+          customerFirstname = rawShopName;
+          customerLastname = ownerName || 'Entreprise';
         }
+      } else if (ownerName) {
+        const parts = ownerName.split(/\s+/);
+        customerFirstname = parts[0];
+        customerLastname = parts.length > 1 ? parts.slice(1).join(' ') : 'Commerçant';
       }
-      if (typeof shop?.email === 'string' && shop.email.includes('@')) {
-        customerEmail = shop.email.trim();
+
+      if (!customerEmail) {
+        const slug = (rawShopName || ownerName || `shop_${dto.shopId}`)
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+        customerEmail = `${slug || `shop_${dto.shopId}`}@arike.app`;
       }
-    } catch (_) {}
+    } catch (err: any) {
+      this.logger.warn(`Erreur lors de la résolution du nom client FedaPay: ${err.message}`);
+    }
 
     const payload: Record<string, any> = {
       amount: Math.round(dto.amount),

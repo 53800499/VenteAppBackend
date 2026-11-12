@@ -45,6 +45,14 @@ export class InitializeFedaPayDto {
   @IsOptional()
   @IsString()
   addonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  customerName?: string;
+
+  @IsOptional()
+  @IsString()
+  customerEmail?: string;
 }
 
 @ApiTags('FedaPay')
