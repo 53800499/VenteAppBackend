@@ -142,7 +142,7 @@ export class PlanModulesGuard implements CanActivate {
       const { data: planData } = await db.from('subscription_plans').select('*').eq('code', planCode).maybeSingle();
 
       const defaultModules: Record<string, string[]> = {
-        FREE: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC'],
+        FREE: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS'],
         ESSENTIEL: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'PROCUREMENT', 'REPORTS_BASIC', 'SALES_ORDERS'],
         PRO: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG'],
         BUSINESS: ['SALES', 'INVENTORY', 'CUSTOMERS', 'DEBTS', 'EXPENSES', 'CASH_SESSIONS', 'REPORTS_BASIC', 'SALES_ORDERS', 'PROCUREMENT', 'REPORTS_ADVANCED', 'AUDIT_LOG', 'STOCK_TRANSFERS', 'FX_EXCHANGE', 'MULTI_SHOP'],
@@ -160,6 +160,7 @@ export class PlanModulesGuard implements CanActivate {
       let grantedModules: string[] = planData?.granted_modules || defaultModules[planCode] || defaultModules.FREE;
 
       // Vérifier si la contrainte de module liée aux abonnements est désactivée par le back-office
+      let enforceModuleSubscription = true;
       try {
         const { data: policyRecord } = await db.from('platform_settings').select('general_json, licensing_policy_json').eq('id', 'default').maybeSingle();
         if (policyRecord) {
@@ -171,20 +172,19 @@ export class PlanModulesGuard implements CanActivate {
             gen?.globalFullAccess === true ||
             lic?.globalFullAccess === true
           ) {
+            enforceModuleSubscription = false;
             grantedModules = ['ALL_MODULES'];
           }
         }
       } catch {}
 
-      // S'assurer que le module essentiel PROCUREMENT (Approvisionnements) est accessible à tous les commerces
-      if (!grantedModules.includes('PROCUREMENT') && !grantedModules.includes('ALL_MODULES')) {
-        grantedModules = [...grantedModules, 'PROCUREMENT'];
-      }
       // S'assurer que SALES_ORDERS (Commandes clients) est garanti pour les forfaits PRO, BUSINESS, ENTERPRISE
-      if (['PRO', 'BUSINESS', 'ENTERPRISE'].includes(planCode) && !grantedModules.includes('SALES_ORDERS') && !grantedModules.includes('ALL_MODULES')) {
+      if (enforceModuleSubscription && ['PRO', 'BUSINESS', 'ENTERPRISE'].includes(planCode) && !grantedModules.includes('SALES_ORDERS') && !grantedModules.includes('ALL_MODULES')) {
         grantedModules = [...grantedModules, 'SALES_ORDERS'];
       }
-      const capabilities = planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE;
+      const capabilities = enforceModuleSubscription
+        ? (planData?.capabilities || defaultCapabilities[planCode] || defaultCapabilities.FREE)
+        : ['CLOUD_SYNC', 'AI_ASSISTANT', 'MULTI_DEVICE', 'MULTI_SHOP', 'API_EXPORT'];
 
       const result = {
         planCode,

@@ -1,6 +1,8 @@
+import * as crypto from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../../../infrastructure/supabase/supabase.service';
+import { PlanModulesGuard } from '../../../shared/guards/plan-modules.guard';
 
 export interface CreateFedaPayTransactionDto {
   amount: number;
@@ -11,11 +13,13 @@ export interface CreateFedaPayTransactionDto {
   planCode?: string;
   durationDays?: number;
   addonCode?: string;
+  callbackUrl?: string;
 }
 
 @Injectable()
 export class FedaPayService {
   private readonly logger = new Logger(FedaPayService.name);
+  private readonly processingTxIds = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -60,17 +64,27 @@ export class FedaPayService {
     let phoneObj: any = undefined;
     if (dto.phoneNumber) {
       const cleanPhone = dto.phoneNumber.replace(/\D/g, '');
-      const num = cleanPhone.length > 8 ? cleanPhone.slice(-8) : cleanPhone;
-      phoneObj = {
-        number: num,
-        country: 'BJ',
-      };
+      // Au Bénin (229), les numéros passent à 10 chiffres (ex: 01XXXXXXXX).
+      // On retire l'indicatif pays 229 sans tronquer les 10 chiffres locaux.
+      const localNum =
+        cleanPhone.startsWith('229') && cleanPhone.length >= 11
+          ? cleanPhone.slice(3)
+          : cleanPhone;
+      if (localNum.length >= 8) {
+        phoneObj = {
+          number: localNum,
+          country: 'BJ',
+        };
+      }
     }
 
-    const payload = {
+    const callbackUrl = dto.callbackUrl || this.configService.get<string>('FEDAPAY_CALLBACK_URL');
+
+    const payload: Record<string, any> = {
       amount: Math.round(dto.amount),
       currency: { iso: 'XOF' },
       description: dto.description,
+      ...(callbackUrl ? { callback_url: callbackUrl } : {}),
       custom_metadata: {
         shop_id: dto.shopId,
         plan_code: dto.planCode,
@@ -166,7 +180,7 @@ export class FedaPayService {
   }
 
   /**
-   * Vérifier l'état d'une transaction FedaPay
+   * Vérifier l'état d'une transaction FedaPay directement auprès de l'API FedaPay
    */
   async checkStatus(transactionId: number) {
     try {
@@ -179,12 +193,23 @@ export class FedaPayService {
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          status: 'unknown',
+          message: data?.message || 'Erreur lors de la vérification FedaPay',
+        };
+      }
+
       const tx = data['v1/transaction'] || data.v1?.transaction || data.transaction || data;
       let status = tx.status;
 
-      // En mode Sandbox (environnement sandbox ou clé de test), auto-approuver
-      // immédiatement les transactions de test en attente pour un flux de dev fluide.
-      if ((this.environment === 'sandbox' || this.secretKey.includes('sandbox')) && status === 'pending') {
+      // Auto-approbation UNIQUEMENT en mode Sandbox explicite avec clé sk_sandbox_
+      if (
+        this.environment === 'sandbox' &&
+        this.secretKey.startsWith('sk_sandbox_') &&
+        status === 'pending'
+      ) {
         status = 'approved';
         tx.status = 'approved';
       }
@@ -223,28 +248,100 @@ export class FedaPayService {
   }
 
   /**
-   * Traitement automatique du Webhook FedaPay
+   * Vérifie la signature HMAC FedaPay si présente et si FEDAPAY_WEBHOOK_SECRET est configuré.
+   */
+  private verifyWebhookSignature(body: any, headers?: Record<string, string>): boolean {
+    const webhookSecret = this.configService.get<string>('FEDAPAY_WEBHOOK_SECRET') || '';
+    if (!webhookSecret || webhookSecret.includes('changez_moi')) {
+      return true;
+    }
+
+    const normalizedHeaders: Record<string, string> = {};
+    if (headers) {
+      for (const [k, v] of Object.entries(headers)) {
+        normalizedHeaders[k.toLowerCase()] = String(v);
+      }
+    }
+
+    const sigHeader = normalizedHeaders['x-fedapay-signature'];
+    if (!sigHeader) {
+      return false;
+    }
+
+    try {
+      const parts = sigHeader.split(',').reduce<Record<string, string>>((acc, item) => {
+        const [k, v] = item.split('=');
+        if (k && v) acc[k.trim()] = v.trim();
+        return acc;
+      }, {});
+
+      const timestamp = parts['t'];
+      const signature = parts['s'];
+      if (!timestamp || !signature) return false;
+
+      const payloadToSign = `${timestamp}.${typeof body === 'string' ? body : JSON.stringify(body)}`;
+      const expected = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payloadToSign)
+        .digest('hex');
+
+      const sigBuf = Buffer.from(signature, 'utf8');
+      const expBuf = Buffer.from(expected, 'utf8');
+      return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Traitement automatique et sécurisé du Webhook FedaPay.
+   * Source de vérité : re-vérification directe auprès de l'API FedaPay + idempotence stricte.
    */
   async handleWebhook(body: any, headers?: Record<string, string>) {
     try {
-      this.logger.log(`FedaPay Webhook payload reçu: ${JSON.stringify(body)}`);
-
       if (!body || typeof body !== 'object') {
         return { status: 'success', message: 'Payload vide ou invalide ignoré' };
       }
 
       const event = body.name || body.event || body.type || body.v1?.event || '';
-      const entity = body['v1/transaction'] || body.entity || body.data?.object || body.transaction || body.v1?.transaction || body;
-      const status = entity?.status || body.status || '';
+      const entity =
+        body['v1/transaction'] ||
+        body.entity ||
+        body.data?.object ||
+        body.transaction ||
+        body.v1?.transaction ||
+        body;
+      const rawStatus = entity?.status || body.status || '';
+      const txId = entity?.id ? Number(entity.id) : null;
 
-      this.logger.log(`FedaPay Webhook analysé: event=${event}, status=${status}`);
+      this.logger.log(`FedaPay Webhook reçu: event=${event}, txId=${txId}, status=${rawStatus}`);
 
       if (
-        status === 'approved' ||
-        status === 'transferred' ||
+        rawStatus === 'approved' ||
+        rawStatus === 'transferred' ||
         event === 'transaction.approved' ||
         event === 'approved'
       ) {
+        const sigValid = this.verifyWebhookSignature(body, headers);
+
+        // Sécurité en ligne : toujours confirmer l'état réel de la transaction chez FedaPay API
+        // si l'ID de transaction est disponible (empêche toute usurpation de webhook).
+        if (txId && this.secretKey && !this.secretKey.includes('changez_moi')) {
+          const verified = await this.checkStatus(txId);
+          if (!verified.success || (verified.status !== 'approved' && verified.status !== 'transferred')) {
+            this.logger.warn(
+              `Webhook FedaPay rejeté : transaction ${txId} non confirmée par l'API FedaPay (statut réel=${verified.status})`,
+            );
+            return { status: 'ignored', message: 'Transaction non approuvée côté FedaPay' };
+          }
+          return { status: 'success', message: 'Webhook FedaPay vérifié via API et traité' };
+        }
+
+        if (!sigValid) {
+          this.logger.warn('Webhook FedaPay rejeté : signature HMAC invalide et aucun txId vérifiable');
+          return { status: 'ignored', message: 'Signature webhook invalide' };
+        }
+
         let metadata = entity?.custom_metadata || entity?.metadata || body?.custom_metadata || {};
         if (typeof metadata === 'string') {
           try {
@@ -273,7 +370,7 @@ export class FedaPayService {
   }
 
   /**
-   * Activation automatique du forfait en base de données après paiement
+   * Activation automatique et idempotente du forfait en base de données après paiement.
    */
   public async applySubscriptionUpgrade(
     shopId: number,
@@ -284,8 +381,34 @@ export class FedaPayService {
   ) {
     const db = this.supabase.db;
     const now = new Date();
+    const txId = entity?.id ? String(entity.id) : null;
+    const paymentReference = txId ? `FEDAPAY-${txId}` : `FEDAPAY-${Date.now()}`;
+
+    if (txId && this.processingTxIds.has(txId)) {
+      this.logger.log(`Transaction FedaPay ${txId} déjà en cours de traitement — ignorée`);
+      return;
+    }
+
+    if (txId) {
+      this.processingTxIds.add(txId);
+    }
 
     try {
+      // 1. Idempotence stricte en base : vérifier si cette transaction FedaPay a déjà été appliquée
+      if (txId) {
+        const { data: alreadyApplied } = await db
+          .from('subscriptions')
+          .select('id')
+          .eq('payment_reference', paymentReference)
+          .limit(1)
+          .maybeSingle();
+
+        if (alreadyApplied) {
+          this.logger.log(`Transaction FedaPay ${txId} déjà appliquée en base (id=${alreadyApplied.id}) — idempotence OK`);
+          return;
+        }
+      }
+
       const { data: shop } = await db
         .from('shops')
         .select('*')
@@ -303,7 +426,7 @@ export class FedaPayService {
         return;
       }
 
-      // Vérifier la souscription existante
+      // 2. Vérifier la souscription existante pour cumul des jours restants
       const { data: existingSub } = await db
         .from('subscriptions')
         .select('*')
@@ -320,32 +443,51 @@ export class FedaPayService {
       const graceUntil = new Date(expiresAt.getTime() + 7 * 86400000);
 
       const targetPlan = planCode || existingSub?.plan_code || 'ESSENTIEL';
+      const paidAmount = entity?.amount ? Number(entity.amount) : null;
 
-      // Enregistrer l'abonnement actif dans la table `subscriptions`
-      try {
-        const { data: planData } = await db
-          .from('subscription_plans')
-          .select('id')
-          .eq('code', targetPlan)
-          .maybeSingle();
+      // 3. Enregistrer l'abonnement actif dans la table `subscriptions`
+      const { data: planData } = await db
+        .from('subscription_plans')
+        .select('id, price_monthly')
+        .eq('code', targetPlan)
+        .maybeSingle();
 
-        await db.from('subscriptions').insert({
-          tenant_id: tenantUuid,
-          plan_id: planData?.id,
-          plan_code: targetPlan,
-          status: 'ACTIVE',
-          started_at: now.toISOString(),
-          expires_at: expiresAt.toISOString(),
-          grace_until: graceUntil.toISOString(),
-          auto_renew: false,
-        });
-      } catch (subErr: any) {
-        this.logger.warn(`Insertion table subscriptions échouée: ${subErr.message}`);
-      }
+      await db.from('subscriptions').insert({
+        tenant_id: tenantUuid,
+        plan_id: planData?.id,
+        plan_code: targetPlan,
+        status: 'ACTIVE',
+        amount: paidAmount ?? (Number(planData?.price_monthly) || 0),
+        currency: 'FCFA',
+        payment_method: 'FedaPay',
+        payment_reference: paymentReference,
+        started_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        grace_until: graceUntil.toISOString(),
+        auto_renew: false,
+      });
 
-      this.logger.log(`Shop ${shopId} (tenant: ${tenantUuid}) abonnement activé avec succès via FedaPay: plan=${targetPlan}, expire=${expiresAt.toISOString()}`);
+      // 4. Mettre à jour la boutique et invalider le cache du guard immédiatement
+      await db
+        .from('shops')
+        .update({
+          plan: targetPlan,
+          is_active: true,
+          subscription_expires_at: expiresAt.toISOString(),
+        })
+        .eq('id', shopId);
+
+      PlanModulesGuard.invalidateCache(shopId);
+
+      this.logger.log(
+        `Shop ${shopId} (tenant: ${tenantUuid}) abonnement activé via FedaPay (${paymentReference}): plan=${targetPlan}, expire=${expiresAt.toISOString()}`,
+      );
     } catch (err: any) {
       this.logger.error(`Échec applySubscriptionUpgrade FedaPay pour shop ${shopId}: ${err.message}`);
+    } finally {
+      if (txId) {
+        this.processingTxIds.delete(txId);
+      }
     }
   }
 }

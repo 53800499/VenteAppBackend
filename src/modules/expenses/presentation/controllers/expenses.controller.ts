@@ -21,9 +21,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentAuth } from '../../../../shared/decorators/current-auth.decorator';
+import { RequireModule } from '../../../../shared/decorators/require-module.decorator';
 import { RequirePermissions } from '../../../../shared/decorators/permissions.decorator';
+import { ArikeModule } from '../../../../shared/enums/module.enum';
 import { Permission } from '../../../../shared/enums/permission.enum';
 import { PermissionsGuard } from '../../../../shared/guards/permissions.guard';
+import { PlanModulesGuard } from '../../../../shared/guards/plan-modules.guard';
 import { SessionGuard } from '../../../../shared/guards/session.guard';
 import type { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { TransformResponseInterceptor } from '../../../../shared/interceptors/transform-response.interceptor';
@@ -57,7 +60,8 @@ import {
 @ApiTags('Dépenses')
 @Controller('expenses')
 @UseInterceptors(TransformResponseInterceptor)
-@UseGuards(SessionGuard, TenantGuard, PermissionsGuard)
+@UseGuards(SessionGuard, TenantGuard, PlanModulesGuard, PermissionsGuard)
+@RequireModule(ArikeModule.EXPENSES)
 @ApiSecurity('bearer')
 export class ExpensesController {
   constructor(
