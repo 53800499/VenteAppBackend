@@ -106,6 +106,8 @@ export class CreateStandardSaleUseCase {
       quantity: item.quantity,
       unitPrice: item.unitPrice ?? 0,
       lineDiscountAmount: item.lineDiscountAmount ?? 0,
+      allowDeficit: (item as any).allowDeficit ?? false,
+      deficitReason: (item as any).deficitReason,
     }));
 
     this.validation.assertStandardCart(lines);
@@ -122,7 +124,12 @@ export class CreateStandardSaleUseCase {
       }
       const unitPrice = line.unitPrice > 0 ? line.unitPrice : product.priceSell;
       line.unitPrice = unitPrice;
-      this.validation.assertStockAvailable(product.name, product.quantityInStock, line.quantity);
+      this.validation.assertStockAvailable(
+        product.name,
+        product.quantityInStock,
+        line.quantity,
+        line.allowDeficit ?? false,
+      );
       productSnapshots.push({ product: product!, line });
     }
 
@@ -161,6 +168,8 @@ export class CreateStandardSaleUseCase {
         shopId: auth.shopId,
         productId: product!.id,
         quantity: line.quantity,
+        allowDeficit: line.allowDeficit ?? false,
+        estimatedUnitCost: product!.priceBuy ?? 0,
       });
       fifoSnapshots.push({
         productId: product!.id,
@@ -223,6 +232,11 @@ export class CreateStandardSaleUseCase {
       const refreshed = await this.products.findByIdAndShop(product!.id, auth.shopId);
       const quantityAfter = refreshed?.quantityInStock ?? fifo.quantityBefore - line.quantity;
 
+      const deficit = Math.max(0, line.quantity - fifo.quantityBefore);
+      const movementReason = deficit > 0
+        ? `Vente en déficit (${deficit} unité(s)) - ${line.deficitReason || 'Autorisé'}`
+        : null;
+
       await this.stockMovements.create({
         shop_id: auth.shopId,
         product_id: product!.id,
@@ -231,6 +245,7 @@ export class CreateStandardSaleUseCase {
         quantity_change: -line.quantity,
         quantity_before: fifo.quantityBefore,
         quantity_after: quantityAfter,
+        reason: movementReason,
         sale_id: sale.id,
         unit_cost: fifo.unitCost,
         created_at: timestamp,

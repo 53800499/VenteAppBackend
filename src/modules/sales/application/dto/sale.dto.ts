@@ -60,6 +60,15 @@ export class SaleLineDto {
   @IsInt()
   @Min(0)
   lineDiscountAmount?: number;
+
+  @ApiPropertyOptional({ example: false, description: 'Autorise la vente avec déficit de stock' })
+  @IsOptional()
+  allowDeficit?: boolean;
+
+  @ApiPropertyOptional({ example: 'Stock physique supérieur', description: 'Motif du déficit' })
+  @IsOptional()
+  @IsString()
+  deficitReason?: string;
 }
 
 export class CreateStandardSaleDto {

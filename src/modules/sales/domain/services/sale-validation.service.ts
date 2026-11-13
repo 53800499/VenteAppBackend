@@ -14,6 +14,8 @@ export interface SaleLineDraft {
   quantity: number;
   unitPrice: number;
   lineDiscountAmount: number;
+  allowDeficit?: boolean;
+  deficitReason?: string;
 }
 
 export interface PaymentDraft {
@@ -98,8 +100,13 @@ export class SaleValidationService {
     }
   }
 
-  assertStockAvailable(productName: string, available: number, requested: number): void {
-    if (requested > available) {
+  assertStockAvailable(
+    productName: string,
+    available: number,
+    requested: number,
+    allowDeficit = false,
+  ): void {
+    if (requested > available && !allowDeficit) {
       throw new SaleInsufficientStockException(productName, available);
     }
   }

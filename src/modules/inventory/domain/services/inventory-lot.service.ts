@@ -32,6 +32,18 @@ export class InventoryLotService {
       throw new BadRequestException('La quantité du lot doit être positive.');
     }
     const timestamp = input.receivedAt ?? nowMs();
+
+    const product = await this.products.findByIdAndShop(input.productId, input.shopId);
+    const currentStock = product?.quantityInStock ?? 0;
+
+    // Si le stock est négatif (en déficit), ce nouveau lot couvre le déficit en priorité
+    let quantityRemaining = input.quantity;
+    if (currentStock < 0) {
+      const deficit = Math.abs(currentStock);
+      const compensation = Math.min(deficit, input.quantity);
+      quantityRemaining = input.quantity - compensation;
+    }
+
     const lot = await this.lots.create({
       shop_id: input.shopId,
       product_id: input.productId,
@@ -41,14 +53,23 @@ export class InventoryLotService {
       supplier_id: input.supplierId ?? null,
       unit_cost: input.unitCost,
       quantity_received: input.quantity,
-      quantity_remaining: input.quantity,
+      quantity_remaining: quantityRemaining,
       batch_number: input.batchNumber ?? null,
       expiry_date: input.expiryDate ?? null,
       received_at: timestamp,
-      status: InventoryLotStatus.ACTIVE,
+      status: quantityRemaining <= 0 ? InventoryLotStatus.DEPLETED : InventoryLotStatus.ACTIVE,
       created_at: timestamp,
     });
-    await this.refreshProductStockFromLots(input.shopId, input.productId);
+
+    const newStock = currentStock + input.quantity;
+    if (product) {
+      await this.products.updateInShop(input.productId, input.shopId, {
+        quantity_in_stock: newStock,
+        price_buy: input.unitCost,
+        updated_at: timestamp,
+        version: product.version + 1,
+      });
+    }
     return lot;
   }
 
@@ -56,6 +77,8 @@ export class InventoryLotService {
     shopId: number;
     productId: number;
     quantity: number;
+    allowDeficit?: boolean;
+    estimatedUnitCost?: number;
   }): Promise<LotAllocationSlice[]> {
     if (input.quantity <= 0) return [];
 
@@ -84,12 +107,28 @@ export class InventoryLotService {
     }
 
     if (remaining > 0) {
-      throw new BadRequestException(
-        `Stock lot insuffisant pour le produit #${input.productId} (manque ${remaining} unité(s)).`,
-      );
+      if (!input.allowDeficit) {
+        throw new BadRequestException(
+          `Stock lot insuffisant pour le produit #${input.productId} (manque ${remaining} unité(s)).`,
+        );
+      }
+      slices.push({
+        lotId: -1,
+        quantity: remaining,
+        unitCost: input.estimatedUnitCost ?? 0,
+      });
     }
 
-    await this.refreshProductStockFromLots(input.shopId, input.productId);
+    const product = await this.products.findByIdAndShop(input.productId, input.shopId);
+    if (product) {
+      const newStock = product.quantityInStock - input.quantity;
+      await this.products.updateInShop(input.productId, input.shopId, {
+        quantity_in_stock: newStock,
+        updated_at: nowMs(),
+        version: product.version + 1,
+      });
+    }
+
     return slices;
   }
 
@@ -99,9 +138,10 @@ export class InventoryLotService {
     slices: LotAllocationSlice[];
     createdAt: number;
   }) {
-    if (input.slices.length === 0) return;
+    const realSlices = input.slices.filter((s) => s.lotId > 0);
+    if (realSlices.length === 0) return;
     await this.lots.createAllocations(
-      input.slices.map((slice) => ({
+      realSlices.map((slice) => ({
         shop_id: input.shopId,
         sale_item_id: input.saleItemId,
         inventory_lot_id: slice.lotId,
@@ -134,16 +174,17 @@ export class InventoryLotService {
 
     await this.lots.deleteAllocationsBySaleItemIds(saleItemIds);
 
-    for (const productId of productIds) {
+    for (const productId of Array.from(productIds)) {
       await this.refreshProductStockFromLots(shopId, productId);
     }
   }
 
   async refreshProductStockFromLots(shopId: number, productId: number) {
-    const total = await this.lots.sumRemainingByProduct(shopId, productId);
     const product = await this.products.findByIdAndShop(productId, shopId);
     if (!product) return;
+    if (product.quantityInStock < 0) return;
 
+    const total = await this.lots.sumRemainingByProduct(shopId, productId);
     await this.products.updateInShop(productId, shopId, {
       quantity_in_stock: total,
       updated_at: nowMs(),
