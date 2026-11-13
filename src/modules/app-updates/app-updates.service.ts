@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SupabaseService } from '../../core/supabase/supabase.service';
+import { SupabaseService } from '../../infrastructure/supabase/supabase.service';
 import { AppReleaseResponseDto, CreateReleaseDto, SupportedPlatform } from './dto/app-update.dto';
 
 @Injectable()
@@ -13,7 +13,7 @@ export class AppUpdatesService {
       latestVersion: '1.0.1',
       latestBuild: 2,
       minimumSupportedBuild: 1,
-      downloadUrl: 'https://releases.arike.app/android/arike-v1.0.1.apk',
+      downloadUrl: 'android/arike-v1.0.1.apk',
       checksumSha256: '',
       fileSizeBytes: 42000000,
       forceUpdate: false,
@@ -25,7 +25,7 @@ export class AppUpdatesService {
       latestVersion: '1.0.1',
       latestBuild: 2,
       minimumSupportedBuild: 1,
-      downloadUrl: 'https://releases.arike.app/windows/arike-setup-v1.0.1.exe',
+      downloadUrl: 'windows/arike-setup-v1.0.1.exe',
       checksumSha256: '',
       fileSizeBytes: 65000000,
       forceUpdate: false,
@@ -35,6 +35,25 @@ export class AppUpdatesService {
   ];
 
   constructor(private readonly supabase: SupabaseService) {}
+
+  /**
+   * Résout une URL publique Supabase Storage pour le bucket 'releases'
+   * Si la valeur est déjà une URL complète (http:// ou https://), elle est retournée telle quelle.
+   */
+  getPublicUrlForStoragePath(pathOrUrl: string): string {
+    if (!pathOrUrl) return '';
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return pathOrUrl;
+    }
+    try {
+      const client = this.supabase.getClient();
+      const cleanPath = pathOrUrl.replace(/^\/+/, '');
+      const { data } = client.storage.from('releases').getPublicUrl(cleanPath);
+      return data?.publicUrl || pathOrUrl;
+    } catch (_) {
+      return pathOrUrl;
+    }
+  }
 
   async getLatestRelease(platformStr: string): Promise<AppReleaseResponseDto | null> {
     const platform = platformStr.toUpperCase() as SupportedPlatform;
@@ -59,7 +78,7 @@ export class AppUpdatesService {
           latestVersion: data.version,
           latestBuild: data.build_number,
           minimumSupportedBuild: data.minimum_build ?? 1,
-          downloadUrl: data.download_url,
+          downloadUrl: this.getPublicUrlForStoragePath(data.download_url),
           checksumSha256: data.checksum_sha256,
           fileSizeBytes: data.file_size_bytes,
           forceUpdate: !!data.force_update,
@@ -73,7 +92,11 @@ export class AppUpdatesService {
 
     // Fallback to in-memory/latest known releases
     const found = this.inMemoryReleases.find((r) => r.platform === platform);
-    return found || null;
+    if (!found) return null;
+    return {
+      ...found,
+      downloadUrl: this.getPublicUrlForStoragePath(found.downloadUrl),
+    };
   }
 
   async getAllReleases(): Promise<AppReleaseResponseDto[]> {
@@ -90,7 +113,7 @@ export class AppUpdatesService {
           latestVersion: d.version,
           latestBuild: d.build_number,
           minimumSupportedBuild: d.minimum_build ?? 1,
-          downloadUrl: d.download_url,
+          downloadUrl: this.getPublicUrlForStoragePath(d.download_url),
           checksumSha256: d.checksum_sha256,
           fileSizeBytes: d.file_size_bytes,
           forceUpdate: !!d.force_update,
@@ -100,16 +123,20 @@ export class AppUpdatesService {
       }
     } catch (_) {}
 
-    return this.inMemoryReleases;
+    return this.inMemoryReleases.map((r) => ({
+      ...r,
+      downloadUrl: this.getPublicUrlForStoragePath(r.downloadUrl),
+    }));
   }
 
   async publishRelease(dto: CreateReleaseDto): Promise<AppReleaseResponseDto> {
+    const resolvedUrl = this.getPublicUrlForStoragePath(dto.downloadUrl);
     const release: AppReleaseResponseDto = {
       platform: dto.platform,
       latestVersion: dto.version,
       latestBuild: dto.buildNumber,
       minimumSupportedBuild: dto.minimumBuild,
-      downloadUrl: dto.downloadUrl,
+      downloadUrl: resolvedUrl,
       checksumSha256: dto.checksumSha256,
       fileSizeBytes: dto.fileSizeBytes,
       forceUpdate: !!dto.forceUpdate,
@@ -119,18 +146,21 @@ export class AppUpdatesService {
 
     try {
       const client = this.supabase.getClient();
-      await client.from('app_releases').insert({
-        platform: dto.platform,
-        version: dto.version,
-        build_number: dto.buildNumber,
-        minimum_build: dto.minimumBuild,
-        download_url: dto.downloadUrl,
-        checksum_sha256: dto.checksumSha256,
-        file_size_bytes: dto.fileSizeBytes,
-        force_update: !!dto.forceUpdate,
-        release_notes: dto.releaseNotes,
-        is_published: true,
-      });
+      await client.from('app_releases').upsert(
+        {
+          platform: dto.platform,
+          version: dto.version,
+          build_number: dto.buildNumber,
+          minimum_build: dto.minimumBuild,
+          download_url: resolvedUrl,
+          checksum_sha256: dto.checksumSha256,
+          file_size_bytes: dto.fileSizeBytes,
+          force_update: !!dto.forceUpdate,
+          release_notes: dto.releaseNotes,
+          is_published: true,
+        },
+        { onConflict: 'platform,build_number' },
+      );
     } catch (err) {
       this.logger.warn(`Could not insert into app_releases: ${err}`);
     }

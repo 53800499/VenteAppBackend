@@ -19,4 +19,8 @@ export class SupabaseService implements OnModuleInit {
   get db(): SupabaseClient {
     return this.client;
   }
+
+  getClient(): SupabaseClient {
+    return this.client;
+  }
 }

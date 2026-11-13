@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CoreModule } from './core/core.module';
+import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -34,6 +35,7 @@ import { CheckoutSessionService } from './modules/subscription/checkout-session.
 @Module({
   imports: [
     CoreModule,
+    InfrastructureModule,
     TenantsModule,
     AuthModule,
     AdminModule,
