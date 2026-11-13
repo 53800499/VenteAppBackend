@@ -27,6 +27,7 @@ import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { StockTransfersModule } from './modules/stock-transfers/stock-transfers.module';
 import { FxExchangeModule } from './modules/fx-exchange/fx-exchange.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AppUpdatesModule } from './modules/app-updates/app-updates.module';
 import { SubscriptionsController } from './modules/subscription/subscriptions.controller';
 import { CheckoutSessionService } from './modules/subscription/checkout-session.service';
 
@@ -36,6 +37,7 @@ import { CheckoutSessionService } from './modules/subscription/checkout-session.
     TenantsModule,
     AuthModule,
     AdminModule,
+    AppUpdatesModule,
     ShopsModule,
     UsersModule,
     RbacModule,
