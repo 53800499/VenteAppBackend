@@ -550,7 +550,26 @@ export class SubscriptionsController {
           subInsert.scheduled_effective_at = scheduledEffectiveAt;
         }
 
-        await db.from('subscriptions').insert(subInsert);
+        const { error: insertError } = await db.from('subscriptions').insert(subInsert);
+        if (insertError) {
+          if (
+            insertError.code === 'PGRST204' ||
+            insertError.message?.includes('schema cache') ||
+            insertError.message?.includes('column')
+          ) {
+            const basePayload = {
+              tenant_id: tenantUuid,
+              plan_id: appliedPlan === plan ? planData?.id : existingSub?.plan_id,
+              plan_code: appliedPlan,
+              status: 'ACTIVE',
+              started_at: new Date().toISOString(),
+              expires_at: expiresAt.toISOString(),
+              grace_until: graceUntil.toISOString(),
+              auto_renew: false,
+            };
+            await db.from('subscriptions').insert(basePayload);
+          }
+        }
 
         try {
           await db.from('subscription_transitions').insert({
@@ -566,8 +585,15 @@ export class SubscriptionsController {
           });
         } catch {}
 
-        // Mettre à jour la projection `shops.plan` depuis la source de vérité `subscriptions`
-        await db.from('shops').update({ plan: appliedPlan }).eq('id', shopId);
+        // Mettre à jour la projection `shops` : plan, is_active, subscription_expires_at
+        await db
+          .from('shops')
+          .update({
+            plan: appliedPlan,
+            is_active: true,
+            subscription_expires_at: expiresAt.toISOString(),
+          })
+          .eq('id', shopId);
       }
     } catch {}
 

@@ -366,7 +366,11 @@ export class FedaPayService {
         const addonCode = metadata.addon_code || metadata.addonCode;
 
         if (shopId) {
-          await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, tx);
+          try {
+            await this.applySubscriptionUpgrade(Number(shopId), planCode, durationDays, addonCode, tx);
+          } catch (upgradeErr: any) {
+            this.logger.error(`Erreur applySubscriptionUpgrade dans checkStatus: ${upgradeErr.message}`);
+          }
         }
       }
 
@@ -545,17 +549,19 @@ export class FedaPayService {
     try {
       // 1. Idempotence stricte en base : vérifier si cette transaction FedaPay a déjà été appliquée
       if (txId) {
-        const { data: alreadyApplied } = await db
-          .from('subscriptions')
-          .select('id')
-          .eq('payment_reference', paymentReference)
-          .limit(1)
-          .maybeSingle();
+        try {
+          const { data: alreadyApplied } = await db
+            .from('subscriptions')
+            .select('id')
+            .eq('payment_reference', paymentReference)
+            .limit(1)
+            .maybeSingle();
 
-        if (alreadyApplied) {
-          this.logger.log(`Transaction FedaPay ${txId} déjà appliquée en base (id=${alreadyApplied.id}) — idempotence OK`);
-          return;
-        }
+          if (alreadyApplied) {
+            this.logger.log(`Transaction FedaPay ${txId} déjà appliquée en base (id=${alreadyApplied.id}) — idempotence OK`);
+            return;
+          }
+        } catch (_) {}
       }
 
       const { data: shop } = await db
@@ -608,7 +614,9 @@ export class FedaPayService {
         .maybeSingle();
 
       const txCurrency = entity?.currency?.iso || entity?.currency_iso;
-      if (txCurrency && String(txCurrency).toUpperCase() !== 'XOF') {
+      const rawCurrency = String(txCurrency || '').toUpperCase();
+      const validCurrencies = ['XOF', 'FCFA', 'CFA', '952', ''];
+      if (this.environment !== 'sandbox' && rawCurrency && !validCurrencies.includes(rawCurrency)) {
         this.logger.warn(`Transaction FedaPay ${txId} rejetée : devise invalide (${txCurrency})`);
         throw new Error(`Devise invalide (${txCurrency})`);
       }
@@ -625,10 +633,16 @@ export class FedaPayService {
               : monthlyPrice;
 
         if (paidAmount !== null && expectedMinAmount > 0 && paidAmount < expectedMinAmount) {
-          this.logger.warn(
-            `Transaction FedaPay ${txId} rejetée : montant payé (${paidAmount}) inférieur au tarif attendu (${expectedMinAmount}) pour ${requestedPlan}`,
-          );
-          throw new Error(`Montant payé (${paidAmount} FCFA) inférieur au tarif du forfait (${expectedMinAmount} FCFA).`);
+          if (this.environment === 'sandbox') {
+            this.logger.warn(
+              `[Sandbox] Transaction FedaPay ${txId} : montant payé (${paidAmount} FCFA) inférieur au tarif officiel (${expectedMinAmount} FCFA) — accepté en mode test.`,
+            );
+          } else {
+            this.logger.warn(
+              `Transaction FedaPay ${txId} rejetée : montant payé (${paidAmount}) inférieur au tarif attendu (${expectedMinAmount}) pour ${requestedPlan}`,
+            );
+            throw new Error(`Montant payé (${paidAmount} FCFA) inférieur au tarif du forfait (${expectedMinAmount} FCFA).`);
+          }
         }
       }
 
@@ -695,7 +709,28 @@ export class FedaPayService {
           this.logger.log(`Transaction FedaPay ${txId} déjà insérée (contrainte UNIQUE) — idempotence garantie`);
           return;
         }
-        throw new Error(insertError.message);
+        // Fallback si colonnes étendues non migrées (migration 056/058 non encore exécutée dans Supabase)
+        if (insertError.code === 'PGRST204' || insertError.message?.includes('schema cache') || insertError.message?.includes('column')) {
+          this.logger.warn(
+            `Table 'subscriptions' : colonnes étendues non migrées (${insertError.message}). Repli sur colonnes de base.`,
+          );
+          const basePayload = {
+            tenant_id: tenantUuid,
+            plan_id: appliedPlanData?.id ?? planData?.id,
+            plan_code: appliedPlan,
+            status: 'ACTIVE',
+            started_at: now.toISOString(),
+            expires_at: expiresAt.toISOString(),
+            grace_until: graceUntil.toISOString(),
+            auto_renew: false,
+          };
+          const { error: baseError } = await db.from('subscriptions').insert(basePayload);
+          if (baseError && baseError.code !== '23505') {
+            throw new Error(baseError.message);
+          }
+        } else {
+          throw new Error(insertError.message);
+        }
       }
 
       try {

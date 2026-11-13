@@ -183,42 +183,115 @@ export class AdminSubscriptionsController {
 
     try {
       const { data: shop } = await db.from('shops').select('*').eq('id', numericId).maybeSingle();
-      const tenantUuid = shop?.server_id;
-
-      let newExpiresAt = new Date(Date.now() + days * 86400000).toISOString();
-
-      if (tenantUuid) {
-        const { data: existingSub } = await db
-          .from('subscriptions')
-          .select('*')
-          .eq('tenant_id', tenantUuid)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const currentExpires = existingSub?.expires_at ? new Date(existingSub.expires_at).getTime() : Date.now();
-        const baseTime = currentExpires > Date.now() ? currentExpires : Date.now();
-        newExpiresAt = new Date(baseTime + days * 86400000).toISOString();
-        const graceUntil = new Date(new Date(newExpiresAt).getTime() + 7 * 86400000).toISOString();
-
-        const { data: planData } = await db.from('subscription_plans').select('id').eq('code', plan).maybeSingle();
-
-        await db.from('subscriptions').insert({
-          tenant_id: tenantUuid,
-          plan_id: planData?.id,
-          plan_code: plan,
-          status: 'ACTIVE',
-          started_at: new Date().toISOString(),
-          expires_at: newExpiresAt,
-          grace_until: graceUntil,
-          auto_renew: false,
-        });
+      if (!shop) {
+        throw new Error(`Entreprise #${numericId} introuvable`);
       }
 
+      let tenantUuid = shop.server_id;
+      if (!tenantUuid) {
+        tenantUuid = crypto.randomUUID();
+        await db.from('shops').update({ server_id: tenantUuid }).eq('id', numericId);
+      }
+
+      // 1. Récupérer l'abonnement actuel pour calcul de cumul des jours (identique au flow FedaPay)
+      const { data: existingSub } = await db
+        .from('subscriptions')
+        .select('*, subscription_plans(*)')
+        .eq('tenant_id', tenantUuid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const now = new Date();
+      const nowMs = now.getTime();
+      const currentExpires = existingSub?.expires_at ? new Date(existingSub.expires_at).getTime() : 0;
+      const hasActivePaidPeriod =
+        currentExpires > nowMs &&
+        (existingSub?.plan_code || 'FREE').toUpperCase() !== 'FREE' &&
+        existingSub?.status !== 'REVOKED' &&
+        existingSub?.status !== 'SUSPENDED';
+
+      // Cumul synchronisé des jours : si la boutique a déjà un abonnement actif en cours,
+      // on ajoute les nouveaux jours à sa date d'échéance actuelle (pas de perte de jours).
+      // Si l'abonnement est expiré ou inexistant, on démarre à partir de maintenant.
+      const baseTime = hasActivePaidPeriod ? currentExpires : nowMs;
+      const newExpiresAtDate = new Date(baseTime + days * 86400000);
+      const newExpiresAt = newExpiresAtDate.toISOString();
+      const graceUntil = new Date(newExpiresAtDate.getTime() + 7 * 86400000).toISOString();
+
+      const currentPlan = (existingSub?.plan_code || shop.plan || 'FREE').toUpperCase();
+      const { data: planData } = await db.from('subscription_plans').select('id, price_monthly').eq('code', plan).maybeSingle();
+      const paymentReference = `MANUAL-ADMIN-${Date.now()}`;
+
+      // 2. Insérer dans la table subscriptions avec repli résilient sur les colonnes de base
+      const fullPayload: Record<string, any> = {
+        tenant_id: tenantUuid,
+        plan_id: planData?.id,
+        plan_code: plan,
+        status: 'ACTIVE',
+        amount: 0,
+        currency: 'FCFA',
+        payment_method: `Manuel Back-Office (${adminEmail})`,
+        payment_reference: paymentReference,
+        started_at: now.toISOString(),
+        expires_at: newExpiresAt,
+        grace_until: graceUntil,
+        auto_renew: false,
+      };
+
+      const { error: insertError } = await db.from('subscriptions').insert(fullPayload);
+      if (insertError) {
+        if (
+          insertError.code === 'PGRST204' ||
+          insertError.message?.includes('schema cache') ||
+          insertError.message?.includes('column')
+        ) {
+          const basePayload = {
+            tenant_id: tenantUuid,
+            plan_id: planData?.id,
+            plan_code: plan,
+            status: 'ACTIVE',
+            started_at: now.toISOString(),
+            expires_at: newExpiresAt,
+            grace_until: graceUntil,
+            auto_renew: false,
+          };
+          await db.from('subscriptions').insert(basePayload);
+        }
+      }
+
+      // 3. Synchroniser la projection `shops` : plan, is_active, subscription_expires_at
+      await db
+        .from('shops')
+        .update({
+          plan: plan,
+          is_active: true,
+          subscription_expires_at: newExpiresAt,
+        })
+        .eq('id', numericId);
+
+      // 4. Invalider immédiatement le cache de contrôle d'accès aux modules
+      PlanModulesGuard.invalidateCache(numericId);
+
+      // 5. Enregistrer la transition d'abonnement (audit commercial)
+      try {
+        await db.from('subscription_transitions').insert({
+          tenant_id: tenantUuid,
+          shop_id: numericId,
+          from_plan: currentPlan,
+          to_plan: plan,
+          transition_type: 'ADMIN_EXTENSION',
+          effective_at: now.toISOString(),
+          payment_reference: paymentReference,
+          reason: dto.reason || `Prolongation manuelle de ${days}j par ${adminEmail}`,
+        });
+      } catch (_) {}
+
+      // 6. Audit log de l'action administrative
       try {
         await db.from('admin_audit_logs').insert({
           id: `aud-${Date.now()}`,
-          timestamp: new Date().toISOString(),
+          timestamp: now.toISOString(),
           admin_email: adminEmail,
           admin_role: 'SUPER_ADMIN',
           action: 'EXTEND_SUBSCRIPTION',
@@ -226,7 +299,7 @@ export class AdminSubscriptionsController {
           reason: dto.reason || `Prolongation de ${days} jours (Forfait ${plan})`,
           result: 'SUCCESS',
         });
-      } catch { }
+      } catch (_) {}
 
       return {
         success: true,
@@ -237,7 +310,7 @@ export class AdminSubscriptionsController {
         updatedBy: adminEmail,
         reason: dto.reason || `Prolongation de ${days} jours`,
       };
-    } catch {
+    } catch (err: any) {
       const newExpiresAt = new Date(Date.now() + days * 86400000).toISOString();
       return {
         success: true,
@@ -247,6 +320,7 @@ export class AdminSubscriptionsController {
         plan,
         updatedBy: adminEmail,
         reason: dto.reason || `Prolongation de ${days} jours`,
+        warning: err.message,
       };
     }
   }
