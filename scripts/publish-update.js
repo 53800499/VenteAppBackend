@@ -62,12 +62,25 @@ async function main() {
   const minBuild = parseInt(args.minBuild || '1', 10);
   const forceUpdate = args.force === 'true' || args.force === true;
   const releaseNotes = args.notes || '• Améliorations de performance\n• Corrections de bugs et stabilité';
+  const customDownloadUrl = args.url ? args.url.trim() : null;
 
-  // Fichier par défaut selon plateforme
+  // Fichier source
   let filePath = args.file;
   if (!filePath) {
     if (platform === 'ANDROID') {
-      filePath = path.resolve(__dirname, '../../frontend/build/app/outputs/flutter-apk/app-release.apk');
+      const arm64Path = path.resolve(__dirname, '../../frontend/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk');
+      const universalPath = path.resolve(__dirname, '../../frontend/build/app/outputs/flutter-apk/app-release.apk');
+      
+      // Si l'APK ARM64 optimisé (<50MB) existe et est demandé ou par défaut
+      if (args.abi === 'arm64' && fs.existsSync(arm64Path)) {
+        filePath = arm64Path;
+      } else if (fs.existsSync(universalPath)) {
+        filePath = universalPath;
+      } else if (fs.existsSync(arm64Path)) {
+        filePath = arm64Path;
+      } else {
+        filePath = universalPath;
+      }
     } else {
       filePath = path.resolve(__dirname, '../../frontend/build/windows/runner/Release/arike-setup.exe');
     }
@@ -82,7 +95,8 @@ async function main() {
 
   if (!fs.existsSync(filePath)) {
     console.error(`\n❌ ERREUR: Le fichier binaire n'existe pas : ${filePath}`);
-    console.log(`👉 Pour Android, compilez d'abord avec : cd frontend && flutter build apk --release\n`);
+    console.log(`👉 Pour compiler l'APK Android léger (<40Mo) : cd frontend && flutter build apk --release --split-per-abi`);
+    console.log(`👉 Pour compiler l'APK universel : cd frontend && flutter build apk --release\n`);
     process.exit(1);
   }
 
@@ -108,34 +122,60 @@ async function main() {
   console.log(`   Taille         : ${sizeMb} Mo (${fileSizeBytes} octets)`);
   console.log(`   SHA-256        : ${checksumSha256}`);
 
-  // 4. Déterminer le chemin de destination sur Supabase Storage
-  const ext = platform === 'ANDROID' ? 'apk' : 'exe';
-  const storageFolder = platform === 'ANDROID' ? 'android' : 'windows';
-  const storageFileName = platform === 'ANDROID' ? `arike-v${version}.apk` : `arike-setup-v${version}.exe`;
-  const storagePath = `${storageFolder}/${storageFileName}`;
-  const contentType = platform === 'ANDROID' ? 'application/vnd.android.package-archive' : 'application/x-msdownload';
+  let downloadUrl = customDownloadUrl;
 
-  console.log(`\n⏳ Envoi vers Supabase Storage (Bucket: 'releases', Chemin: '${storagePath}')...`);
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('releases')
-    .upload(storagePath, fileBuffer, {
-      contentType,
-      upsert: true,
-    });
+  // 4. Si aucune URL externe n'est fournie, uploader vers Supabase Storage
+  if (!downloadUrl) {
+    const isOver50Mb = fileSizeBytes > 50 * 1024 * 1024;
+    if (isOver50Mb) {
+      console.warn(`\n⚠️ Attention : Ce fichier fait ${sizeMb} Mo.`);
+      console.warn(`   Sur le plan gratuit Supabase, la limite max par fichier est de 50 Mo.`);
+    }
 
-  if (uploadError) {
-    console.error(`❌ Échec de l'upload sur Supabase Storage : ${uploadError.message}`);
-    console.log(`💡 Note: Assurez-vous d'avoir exécuté la migration 059_app_updates_and_storage.sql sur votre base Supabase.`);
-    process.exit(1);
+    const ext = platform === 'ANDROID' ? 'apk' : 'exe';
+    const storageFolder = platform === 'ANDROID' ? 'android' : 'windows';
+    const storageFileName = platform === 'ANDROID' ? `arike-v${version}.apk` : `arike-setup-v${version}.exe`;
+    const storagePath = `${storageFolder}/${storageFileName}`;
+    const contentType = platform === 'ANDROID' ? 'application/vnd.android.package-archive' : 'application/x-msdownload';
+
+    console.log(`\n⏳ Envoi vers Supabase Storage (Bucket: 'releases', Chemin: '${storagePath}')...`);
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('releases')
+      .upload(storagePath, fileBuffer, {
+        contentType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error(`\n❌ Échec de l'upload sur Supabase Storage : ${uploadError.message}`);
+      
+      if (uploadError.message && uploadError.message.includes('exceeded the maximum allowed size')) {
+        console.log('\n💡 POURQUOI CETTE ERREUR ?');
+        console.log('   Le plan gratuit de Supabase limite les uploads à 50 Mo par fichier.');
+        console.log(`   Votre fichier universel fait ${sizeMb} Mo (car il contient toutes les architectures processeurs combinées).\n`);
+        console.log('👉 SOLUTION 1 (Recommandée pour Android, 100% gratuit & rapide) :');
+        console.log('   Compilez l\'APK optimisé (taille ~30-38 Mo) avec :');
+        console.log('   cd ../frontend && flutter build apk --release --split-per-abi');
+        console.log('   Puis relancez :');
+        console.log('   npm run publish:update -- --file=../frontend/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk\n');
+        console.log('👉 SOLUTION 2 (Hébergement sur votre Landing Page / Serveur Web) :');
+        console.log('   Placez l\'APK de 103 Mo dans LandinPage/public/downloads/arike-v' + version + '.apk et publiez avec :');
+        console.log(`   npm run publish:update -- --url="https://votre-domaine.com/downloads/arike-v${version}.apk"\n`);
+      }
+      process.exit(1);
+    }
+
+    // Récupération de l'URL publique Supabase
+    const { data: publicUrlData } = supabase.storage.from('releases').getPublicUrl(storagePath);
+    downloadUrl = publicUrlData.publicUrl;
+    console.log(`✅ Upload réussi sur Supabase Storage !`);
+  } else {
+    console.log(`🌐 Utilisation de l'URL de téléchargement fournie : ${downloadUrl}`);
   }
 
-  // 5. Récupération de l'URL publique
-  const { data: publicUrlData } = supabase.storage.from('releases').getPublicUrl(storagePath);
-  const downloadUrl = publicUrlData.publicUrl;
-  console.log(`✅ Upload réussi !`);
-  console.log(`🌐 URL publique : ${downloadUrl}`);
+  console.log(`🌐 URL publique de téléchargement : ${downloadUrl}`);
 
-  // 6. Enregistrement / mise à jour dans la table app_releases
+  // 5. Enregistrement / mise à jour dans la table app_releases
   console.log('\n⏳ Enregistrement de la version dans la table `app_releases`...');
   const { error: dbError } = await supabase.from('app_releases').upsert(
     {
@@ -156,13 +196,15 @@ async function main() {
 
   if (dbError) {
     console.warn(`⚠️ Avertissement lors de l'enregistrement en base : ${dbError.message}`);
-    console.log(`   (L'URL est néanmoins bien en place et active sur Supabase Storage)`);
+    console.log(`   (L'URL est néanmoins bien active : ${downloadUrl})`);
   } else {
     console.log(`✅ Version enregistrée avec succès dans la base de données !`);
   }
 
   console.log('\n🎉 Mise à jour publiée avec succès pour ARIKE !');
   console.log('--------------------------------------------------');
+  console.log(`Plateforme     : ${platform}`);
+  console.log(`Version        : ${version} (Build ${build})`);
   console.log(`Téléchargement : ${downloadUrl}`);
   console.log(`SHA-256        : ${checksumSha256}`);
   console.log('--------------------------------------------------\n');
@@ -172,4 +214,3 @@ main().catch((err) => {
   console.error('\n❌ Erreur inattendue :', err);
   process.exit(1);
 });
-
