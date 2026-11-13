@@ -193,7 +193,7 @@ export function setupSwagger(app: INestApplication): void {
         '| `GET :id` | `audit:read` |',
       ].join('\n'),
     )
-    .setVersion('1.0.0')
+    .setVersion('1.0.1')
     .setContact('ARIKE', '', 'support@venteapp.bj')
     .addBearerAuth(
       {
