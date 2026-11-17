@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PinHasherService } from '../../../../core/security/pin-hasher.service';
+import { Permission } from '../../../../shared/enums/permission.enum';
 import { UserRole } from '../../../../shared/enums/user-role.enum';
 import { AuthContext } from '../../../../shared/interfaces/auth-context.interface';
 import { UserRepository } from '../../../users/domain/repositories/user.repository';
@@ -214,20 +215,23 @@ export class CloseCashSessionUseCase {
 
   async execute(auth: AuthContext, sessionId: number, dto: CloseCashSessionDto) {
     if (auth.role !== UserRole.OWNER) {
-      const pin = dto.ownerPin?.trim() ?? '';
-      if (pin.length < 4) {
-        throw new BadRequestException(
-          'Le PIN du patron est requis pour clôturer la caisse directement.',
-        );
-      }
-      const users = await this.users.findAllByShop(auth.shopId);
-      const owner = users.find((u) => u.role === UserRole.OWNER && u.isActive);
-      if (!owner) {
-        throw new BadRequestException('Patron introuvable pour cette boutique.');
-      }
-      const valid = await this.pinHasher.compare(pin, owner.pinHash);
-      if (!valid) {
-        throw new UnauthorizedException('PIN du patron incorrect.');
+      const canApprove = auth.permissions?.includes(Permission.CASH_SESSIONS_APPROVE);
+      if (!canApprove) {
+        const pin = dto.ownerPin?.trim() ?? '';
+        if (pin.length < 4) {
+          throw new BadRequestException(
+            'Le PIN du patron est requis pour clôturer la caisse directement.',
+          );
+        }
+        const users = await this.users.findAllByShop(auth.shopId);
+        const owner = users.find((u) => u.role === UserRole.OWNER && u.isActive);
+        if (!owner) {
+          throw new BadRequestException('Patron introuvable pour cette boutique.');
+        }
+        const valid = await this.pinHasher.compare(pin, owner.pinHash);
+        if (!valid) {
+          throw new UnauthorizedException('PIN du patron incorrect.');
+        }
       }
     }
 
