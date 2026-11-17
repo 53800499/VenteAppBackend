@@ -226,7 +226,7 @@ export function setupSwagger(app: INestApplication): void {
     deepScanRoutes: true,
   });
 
-  SwaggerModule.setup('api/docs', app, document, {
+  const swaggerConfig = {
     customSiteTitle: 'ARIKE — Documentation API',
     swaggerOptions: {
       persistAuthorization: true,
@@ -235,5 +235,11 @@ export function setupSwagger(app: INestApplication): void {
       tagsSorter: 'alpha',
       operationsSorter: 'alpha',
     },
-  });
+  };
+
+  // Route principale /api/docs
+  SwaggerModule.setup('api/docs', app, document, swaggerConfig);
+
+  // Alias pratique direct sur /docs
+  SwaggerModule.setup('docs', app, document, swaggerConfig);
 }

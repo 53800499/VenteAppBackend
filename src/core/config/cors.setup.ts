@@ -20,18 +20,31 @@ export function setupCors(app: INestApplication): void {
   const raw = (process.env.CORS_ORIGINS ?? '*').trim();
   const allowAll = raw === '*' || raw.toLowerCase() === 'true';
 
-  const origins = allowAll
-    ? true
+  const configuredOrigins = allowAll
+    ? []
     : raw
         .split(',')
         .map((o) => o.trim())
         .filter(Boolean);
 
   app.enableCors({
-    origin: origins,
-    credentials: !allowAll,
+    origin: (origin, callback) => {
+      // Autoriser les requêtes sans origine (mobile apps, curl, backend-to-backend)
+      if (!origin) return callback(null, true);
+      if (allowAll) return callback(null, true);
+      if (configuredOrigins.includes(origin)) return callback(null, true);
+      // Autoriser localhost et 127.0.0.1 sur n'importe quel port en dev
+      if (
+        /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+        /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
     methods: [...ALLOWED_METHODS],
-    allowedHeaders: ALLOWED_HEADERS,
+    allowedHeaders: [...ALLOWED_HEADERS, 'Access-Control-Allow-Headers', 'Access-Control-Allow-Origin'],
     exposedHeaders: ['Content-Disposition'],
     maxAge: 86_400,
   });

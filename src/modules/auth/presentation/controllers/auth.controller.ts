@@ -167,11 +167,40 @@ export class AuthController {
     const db = this.tenantDb.getAdminClient();
 
     // 1. Chercher dans admin_users (Back-office Admins)
-    const { data: dbAdmin } = await db
+    let { data: dbAdmin } = await db
       .from('admin_users')
       .select('*')
       .eq('email', email)
       .maybeSingle();
+
+    // Auto-initialisation du compte administrateur configuré dans .env si absent
+    const defaultEmail = (process.env.ADMIN_DEFAULT_EMAIL || '').trim().toLowerCase();
+    const defaultPassword = process.env.ADMIN_DEFAULT_PASSWORD || '12345678';
+    if (!dbAdmin && defaultEmail && email === defaultEmail && password === defaultPassword) {
+      try {
+        const passwordHash = await bcrypt.hash(defaultPassword, 10);
+        const { data: newAdmin } = await db
+          .from('admin_users')
+          .upsert(
+            {
+              email: defaultEmail,
+              password_hash: passwordHash,
+              full_name: 'Super Administrateur',
+              role: 'SUPER_ADMIN',
+              is_active: true,
+            },
+            { onConflict: 'email' },
+          )
+          .select('*')
+          .maybeSingle();
+
+        if (newAdmin) {
+          dbAdmin = newAdmin;
+        }
+      } catch (_) {
+        // Fallback gracieux si la table n'est pas encore créée
+      }
+    }
 
     if (dbAdmin) {
       if (!dbAdmin.is_active) {
