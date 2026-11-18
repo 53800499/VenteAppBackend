@@ -64,7 +64,7 @@ export class SubscriptionsController {
     private readonly tenantDb: TenantDatabaseService,
     private readonly checkoutSessionService: CheckoutSessionService,
     private readonly fedaPayService: FedaPayService,
-  ) {}
+  ) { }
 
   @Get('packages')
   @ApiOperation({ summary: 'Obtenir les forfaits SaaS disponibles' })
@@ -268,7 +268,7 @@ export class SubscriptionsController {
             enforceModuleSubscription = false;
           }
         }
-      } catch {}
+      } catch { }
 
       const { count: currentUsersCount } = await db
         .from('users')
@@ -354,7 +354,7 @@ export class SubscriptionsController {
         if (p?.general_json?.globalFullAccess === true || p?.general_json?.enforceModuleSubscription === false) {
           isGlobalFullAccessActive = true;
         }
-      } catch {}
+      } catch { }
 
       return {
         planCode: isGlobalFullAccessActive ? 'ENTERPRISE' : 'FREE',
@@ -583,7 +583,7 @@ export class SubscriptionsController {
             payment_reference: subInsert.payment_reference,
             reason: `Souscription ${transitionType} (${durationDays}j)`,
           });
-        } catch {}
+        } catch { }
 
         // Mettre à jour la projection `shops` : plan, is_active, subscription_expires_at
         await db
@@ -595,7 +595,7 @@ export class SubscriptionsController {
           })
           .eq('id', shopId);
       }
-    } catch {}
+    } catch { }
 
     // Invalider le cache du PlanModulesGuard pour prise en compte immédiate
     PlanModulesGuard.invalidateCache(shopId);
@@ -701,7 +701,7 @@ export class SubscriptionsController {
     }
 
     // FedaPay non configuré — fallback WhatsApp
-    const whatsappNumber = '229015380499';
+    const whatsappNumber = '2290153800499';
     const cycleLabel = session.duration_days >= 360 ? 'annuel' : 'mensuel';
     const priceLabel = `${serverAmount.toLocaleString('fr-FR')} FCFA/${session.duration_days >= 360 ? 'an' : 'mois'}`;
     const message = encodeURIComponent(
