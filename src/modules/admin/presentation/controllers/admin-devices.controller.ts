@@ -48,21 +48,98 @@ export class AdminDevicesController {
       const { data: shops } = await db.from('shops').select('id, name');
       const shopMap = new Map((shops || []).map((s: any) => [s.id, s.name]));
 
-      let devices = (sessions || []).map((s: any) => ({
-        sessionId: String(s.id),
-        tenantId: `tenant-${s.shop_id}`,
-        tenantName: shopMap.get(s.shop_id) || `Entreprise #${s.shop_id}`,
-        userId: s.user_id,
-        deviceId: s.device_id || `dev-${s.id}`,
-        label: s.device_label || 'Appareil POS / Mobile',
-        lastSeenAt: typeof s.last_seen_at === 'number'
-          ? new Date(s.last_seen_at).toISOString()
-          : s.last_seen_at || new Date().toISOString(),
-        createdAt: typeof s.created_at === 'number'
-          ? new Date(s.created_at).toISOString()
-          : s.created_at || new Date().toISOString(),
-        status: s.revoked_at != null ? 'REVOKED' : 'ACTIVE',
-      }));
+      // ─────────────────────────────────────────────────────────────
+      // DÉDUPLICATION PAR APPAREIL PHYSIQUE (1 appareil = 1 entrée)
+      // Évite de surcharger la liste avec les sessions multiples du même appareil
+      // ─────────────────────────────────────────────────────────────
+      const groupedDevices = new Map<string, {
+        sessions: any[];
+        latestSession: any;
+        firstConnectedMs: number;
+        lastSeenMs: number;
+      }>();
+
+      for (const s of (sessions || [])) {
+        const deviceId = s.device_id || `dev-${s.id}`;
+        const key = `${s.shop_id}::${deviceId}`;
+
+        const createdMs = typeof s.created_at === 'number'
+          ? s.created_at
+          : new Date(s.created_at || 0).getTime();
+        const lastSeenMs = typeof s.last_seen_at === 'number'
+          ? s.last_seen_at
+          : new Date(s.last_seen_at || 0).getTime();
+
+        const entry = groupedDevices.get(key);
+        if (!entry) {
+          groupedDevices.set(key, {
+            sessions: [s],
+            latestSession: s,
+            firstConnectedMs: createdMs || lastSeenMs,
+            lastSeenMs: lastSeenMs || createdMs,
+          });
+        } else {
+          entry.sessions.push(s);
+          if (createdMs && createdMs < entry.firstConnectedMs) {
+            entry.firstConnectedMs = createdMs;
+          }
+          if (lastSeenMs && lastSeenMs > entry.lastSeenMs) {
+            entry.lastSeenMs = lastSeenMs;
+            entry.latestSession = s;
+          }
+        }
+      }
+
+      let devices = Array.from(groupedDevices.values()).map(({ sessions: devSessions, latestSession, firstConnectedMs, lastSeenMs }) => {
+        const hasActive = devSessions.some((s: any) => s.revoked_at == null);
+        const activeSession = devSessions.find((s: any) => s.revoked_at == null) || latestSession;
+
+        // Calcul de la période de connexion
+        const startDate = new Date(firstConnectedMs);
+        const endDate = new Date(lastSeenMs);
+        const startDay = startDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const endDay = endDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const startTime = startDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const endTime = endDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+        const diffMs = Math.max(0, lastSeenMs - firstConnectedMs);
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffHours / 24);
+
+        let durationText = '';
+        if (diffDays > 0) {
+          const remainingHours = diffHours % 24;
+          durationText = remainingHours > 0 ? `${diffDays} j ${remainingHours} h` : `${diffDays} j`;
+        } else if (diffHours > 0) {
+          const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+          durationText = `${diffHours} h ${diffMins} min`;
+        } else {
+          const diffMins = Math.floor(diffMs / (1000 * 60));
+          durationText = `${Math.max(1, diffMins)} min`;
+        }
+
+        let connectionPeriod = '';
+        if (startDay === endDay) {
+          connectionPeriod = `Le ${startDay} (${startTime} → ${endTime} • ${durationText})`;
+        } else {
+          connectionPeriod = `Du ${startDay} au ${endDay} (${durationText})`;
+        }
+
+        return {
+          sessionId: String(activeSession.id),
+          tenantId: `tenant-${latestSession.shop_id}`,
+          tenantName: shopMap.get(latestSession.shop_id) || `Entreprise #${latestSession.shop_id}`,
+          userId: latestSession.user_id,
+          deviceId: latestSession.device_id || `dev-${latestSession.id}`,
+          label: latestSession.device_label || 'Appareil POS / Mobile',
+          firstConnectedAt: new Date(firstConnectedMs).toISOString(),
+          lastSeenAt: new Date(lastSeenMs).toISOString(),
+          connectionPeriod,
+          durationText,
+          totalSessions: devSessions.length,
+          status: hasActive ? 'ACTIVE' : 'REVOKED',
+        };
+      });
 
       if (statusFilter && statusFilter !== 'ALL') {
         devices = devices.filter((d: any) => d.status === statusFilter);
@@ -114,7 +191,21 @@ export class AdminDevicesController {
     const timestamp = Date.now();
 
     try {
-      await db.from('user_sessions').update({ revoked_at: timestamp }).eq('id', sessionId);
+      const { data: target } = await db
+        .from('user_sessions')
+        .select('device_id, shop_id')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (target?.device_id) {
+        await db
+          .from('user_sessions')
+          .update({ revoked_at: timestamp })
+          .eq('shop_id', target.shop_id)
+          .eq('device_id', target.device_id);
+      } else {
+        await db.from('user_sessions').update({ revoked_at: timestamp }).eq('id', sessionId);
+      }
     } catch {
       // noop fallback
     }

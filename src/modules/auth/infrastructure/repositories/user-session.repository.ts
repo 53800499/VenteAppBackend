@@ -57,6 +57,68 @@ export class SupabaseUserSessionRepository extends UserSessionRepository {
     return UserSessionMapper.toDomain(row as UserSessionRow);
   }
 
+  async findByDevice(
+    shopId: number,
+    userId: number,
+    deviceId: string,
+  ): Promise<UserSession | null> {
+    const { data, error } = await this.supabase.db
+      .from('user_sessions')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .order('last_seen_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new BadRequestException(error.message);
+    return data ? UserSessionMapper.toDomain(data as UserSessionRow) : null;
+  }
+
+  async upsertSessionForDevice(data: CreateUserSessionData): Promise<UserSession> {
+    // 1. Chercher si une session existe déjà pour cet appareil
+    const existing = await this.findByDevice(data.shop_id, data.user_id, data.device_id);
+
+    if (existing) {
+      // Nettoyer les doublons historiques éventuels pour cet appareil afin de ne garder qu'une seule ligne
+      try {
+        await this.supabase.db
+          .from('user_sessions')
+          .delete()
+          .eq('shop_id', data.shop_id)
+          .eq('user_id', data.user_id)
+          .eq('device_id', data.device_id)
+          .neq('id', existing.id);
+      } catch {
+        // Ignorer si contrainte
+      }
+
+      // Mettre à jour la session existante sans surcharger la base de données
+      const { data: updated, error } = await this.supabase.db
+        .from('user_sessions')
+        .update({
+          device_label: data.device_label || existing.deviceLabel,
+          refresh_token_hash: data.refresh_token_hash,
+          pin_verified_at: data.pin_verified_at,
+          last_seen_at: data.last_seen_at,
+          session_expires_at: data.session_expires_at,
+          refresh_expires_at: data.refresh_expires_at,
+          revoked_at: null, // Réactive la session sur cette reconnexion
+        })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+
+      if (error || !updated) {
+        throw new BadRequestException(error?.message ?? 'Mise à jour session impossible.');
+      }
+      return UserSessionMapper.toDomain(updated as UserSessionRow);
+    }
+
+    // 2. Première connexion de cet appareil : insertion unique
+    return this.create(data);
+  }
+
   async updateRefreshToken(
     id: string,
     refreshTokenHash: string,

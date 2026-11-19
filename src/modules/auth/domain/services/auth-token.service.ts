@@ -55,13 +55,12 @@ export class AuthTokenService {
     device: DeviceInfo,
   ): Promise<{ session: UserSession; tokens: IssuedTokenPair; refreshTokenRaw: string }> {
     const timestamp = nowMs();
-    await this.sessions.revokeActiveByDevice(user.id, targetShopId, device.deviceId, timestamp);
-
     const refreshTokenRaw = randomBytes(32).toString('hex');
     const sessionExpiresAt = timestamp + msFromMinutes(Math.max(settings.autoLockMinutes, 60));
     const refreshExpiresAt = timestamp + this.getRefreshTtlMs();
 
-    const session = await this.sessions.create({
+    // Réutilisation et mise à jour de la session de l'appareil (1 appareil = 1 ligne, évite de surcharger la BD)
+    const session = await this.sessions.upsertSessionForDevice({
       user_id: user.id,
       shop_id: targetShopId,
       device_id: device.deviceId,

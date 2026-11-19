@@ -72,13 +72,30 @@ export class ListDeviceSessionsUseCase {
 
     const userNames = await this.resolveUserNames(rows.map((s) => s.userId), auth.shopId);
 
-    return rows.map((session) => ({
+    // Déduplication stricte par appareil : 1 seul affichage par appareil physique
+    const deviceMap = new Map<string, typeof rows[0]>();
+    for (const session of rows) {
+      const devId = session.deviceId || session.id;
+      if (!deviceMap.has(devId)) {
+        deviceMap.set(devId, session);
+      } else {
+        const existing = deviceMap.get(devId)!;
+        if (session.id === auth.sessionId || session.lastSeenAt > existing.lastSeenAt) {
+          deviceMap.set(devId, session);
+        }
+      }
+    }
+
+    const uniqueSessions = Array.from(deviceMap.values());
+
+    return uniqueSessions.map((session) => ({
       id: session.id,
       userId: session.userId,
       userName: userNames.get(session.userId) ?? `Utilisateur #${session.userId}`,
       deviceId: session.deviceId,
       deviceLabel: session.deviceLabel,
       lastSeenAt: session.lastSeenAt,
+      createdAt: session.createdAt,
       sessionExpiresAt: session.sessionExpiresAt,
       refreshExpiresAt: session.refreshExpiresAt,
       isCurrent: session.id === auth.sessionId,

@@ -39,6 +39,12 @@ export abstract class UserSessionRepository {
     deviceId: string,
     revokedAt: number,
   ): Promise<void>;
+  abstract findByDevice(
+    shopId: number,
+    userId: number,
+    deviceId: string,
+  ): Promise<UserSession | null>;
+  abstract upsertSessionForDevice(data: CreateUserSessionData): Promise<UserSession>;
   abstract listActiveByUser(userId: number): Promise<UserSession[]>;
   abstract listActiveByShop(shopId: number): Promise<UserSession[]>;
 }
